@@ -1,0 +1,8 @@
+# Terraform state can contain the generated private key + other sensitive values.
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+# Generated deploy keypair.
+*.pem

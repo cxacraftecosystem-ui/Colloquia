@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Env / secrets
+.env
+*.local
+backend/.env
+
+# Prisma generated client
+backend/prisma/generated/
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+android/.kotlin/
+android/local.properties
+*.iml
+.cxx/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+
+# Scratch
+*.tmp

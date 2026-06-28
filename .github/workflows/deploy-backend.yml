@@ -1,0 +1,77 @@
+name: Deploy backend to EC2
+
+# Auto-deploys the FastAPI backend to the EC2 box on every push to main that touches the backend.
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   EC2_HOST       Elastic IP of the API box (terraform output api_public_ip)
+#   EC2_SSH_KEY    contents of infra/terraform/colloquia-deploy.pem (the generated private key)
+#   BACKEND_ENV    the full backend/.env contents (DATABASE_URL, JWT_SECRET, AWS_* keys, OPENAI_API_KEY,
+#                  DEEPGRAM_API_KEY, GOOGLE_CLIENT_ID, BACKEND_CORS_ORIGINS, LITE_MODE, ...)
+# Nothing secret lives in this file.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start ssh-agent with the deploy key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Add EC2 host to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync code to the server
+        run: |
+          rsync -az --delete \
+            --exclude '.venv' --exclude '__pycache__' --exclude '*.pyc' \
+            ./backend/ ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/app/backend/
+
+      - name: Write .env on the server
+        run: |
+          printf '%s' "$BACKEND_ENV" | ssh ubuntu@${{ secrets.EC2_HOST }} \
+            'cat > /home/ubuntu/app/backend/.env && chmod 600 /home/ubuntu/app/backend/.env'
+        env:
+          BACKEND_ENV: ${{ secrets.BACKEND_ENV }}
+
+      - name: Install deps, create/sync tables, restart
+        run: |
+          ssh ubuntu@${{ secrets.EC2_HOST }} 'bash -s' <<'REMOTE'
+          set -euxo pipefail
+          cd /home/ubuntu/app/backend
+          if [ ! -d .venv ]; then python3.12 -m venv .venv; fi
+          ./.venv/bin/pip install --upgrade pip
+          ./.venv/bin/pip install -e .
+          PATH="$PWD/.venv/bin:$PATH" ./.venv/bin/python -m prisma generate
+          # ta_* tables are created additively from the generated SQL (never touches other apps'
+          # tables or the shared _prisma_migrations table). Safe to re-run: errors on already-existing
+          # tables are ignored so the deploy proceeds.
+          if [ -f prisma/create_tables.sql ]; then
+            PATH="$PWD/.venv/bin:$PATH" ./.venv/bin/python -m prisma db execute --schema=prisma/schema.prisma --file prisma/create_tables.sql || true
+          fi
+          if [ -f prisma/phase2_tables.sql ]; then
+            PATH="$PWD/.venv/bin:$PATH" ./.venv/bin/python -m prisma db execute --schema=prisma/schema.prisma --file prisma/phase2_tables.sql || true
+          fi
+          sudo systemctl restart colloquia
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8010/health >/dev/null 2>&1; then echo "healthy after ${i} tries"; break; fi
+            if [ "$i" = "40" ]; then echo "service did not become healthy:"; sudo journalctl -u colloquia -n 80 --no-pager; exit 1; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8010/health
+          REMOTE
