@@ -1,6 +1,76 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Brand mark from simple-icons (authoritative). 24x24 single path. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <path android:fillColor="#EA4335" android:pathData="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z" />
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+    <path
+        android:pathData="M146 44h38v110c0 6.63-5.37 12-12 12h-20a6 6 0 0 1-6-6z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="165"
+                android:startY="44"
+                android:endX="165"
+                android:endY="166">
+                <item
+                    android:color="#FF60D673"
+                    android:offset="0"/>
+                <item
+                    android:color="#FF42C868"
+                    android:offset=".17"/>
+                <item
+                    android:color="#FF0EBC5F"
+                    android:offset=".39"/>
+                <item
+                    android:color="#FF00A9BB"
+                    android:offset=".62"/>
+                <item
+                    android:color="#FF3C90FF"
+                    android:offset=".86"/>
+                <item
+                    android:color="#FF3186FF"
+                    android:offset="1"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:fillColor="#FFFC413D"
+        android:pathData="M46 44H8v110c0 6.63 5.37 12 12 12h20a6 6 0 0 0 6-6z"/>
+    <path
+        android:pathData="M39.23 30.46c-8.03-6.75-20.02-5.71-26.77 2.31-6.75 8.03-5.71 20.02 2.32 26.77l76.07 63.95a8 8 0 0 0 10.3 0l76.08-63.95c8.03-6.75 9.07-18.74 2.31-26.77-6.75-8.03-18.74-9.07-26.76-2.31L96 78.18z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="8"
+                android:startY="46.13"
+                android:endX="184"
+                android:endY="46.13">
+                <item
+                    android:color="#FFFF63A0"
+                    android:offset=".08"/>
+                <item
+                    android:color="#FFFC413D"
+                    android:offset=".3"/>
+                <item
+                    android:color="#FFFC413D"
+                    android:offset=".5"/>
+                <item
+                    android:color="#FFFC413D"
+                    android:offset=".65"/>
+                <item
+                    android:color="#FFFC5C30"
+                    android:offset=".72"/>
+                <item
+                    android:color="#FFFEB10C"
+                    android:offset=".86"/>
+                <item
+                    android:color="#FFFEC700"
+                    android:offset=".91"/>
+                <item
+                    android:color="#FFFFDB0F"
+                    android:offset=".96"/>
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>

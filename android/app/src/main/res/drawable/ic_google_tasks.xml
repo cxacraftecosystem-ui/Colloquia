@@ -1,6 +1,47 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Brand mark from simple-icons (authoritative). 24x24 single path. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <path android:fillColor="#1A73E8" android:pathData="M11.383.617C5.097.617 0 5.714 0 12c0 6.286 5.097 11.383 11.383 11.383 6.286 0 11.38-5.097 11.38-11.383a11.34 11.34 0 0 0-.878-4.389l-3.203 3.203c.062.387.1.782.1 1.186a7.398 7.398 0 1 1-7.4-7.398c1.499 0 2.889.448 4.054 1.214l2.857-2.857a11.325 11.325 0 0 0-6.91-2.342zm9.674.756c-.292 0-.583.112-.805.334-2.97 2.965-5.934 5.934-8.9 8.902L9.596 8.854a1.139 1.139 0 0 0-1.61 0l-1.775 1.773a1.139 1.139 0 0 0 0 1.61l4.166 4.163a1.421 1.421 0 0 0 2.012 0L23.666 5.121a1.136 1.136 0 0 0 0-1.61l-1.805-1.804a1.136 1.136 0 0 0-.804-.334z" />
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+    <group>
+        <path
+            android:fillColor="#FFBBE2FF"
+            android:pathData="M20 117c0-35.9 29.1-65 65-65h22c35.9 0 65 29.1 65 65v0c0 35.9-29.1 65-65 65h-22c-35.9 0-65-29.1-65-65z"/>
+        <path
+            android:fillColor="#FF3186FF"
+            android:pathData="M10 88c0-40.87 33.13-74 74-74h24c40.87 0 74 33.13 74 74v4c0 40.87-33.13 74-74 74h-24c-40.87 0-74-33.13-74-74z"/>
+        <group>
+            <clip-path
+                android:pathData="M10 88c0-40.87 33.13-74 74-74h24c40.87 0 74 33.13 74 74v4c0 40.87-33.13 74-74 74h-24c-40.87 0-74-33.13-74-74z"/>
+            <group>
+                <path
+                    android:pathData="M20 117c0-35.9 29.1-65 65-65h22c35.9 0 65 29.1 65 65v0c0 35.9-29.1 65-65 65h-22c-35.9 0-65-29.1-65-65z">
+                    <aapt:attr name="android:fillColor">
+                        <gradient
+                            android:type="linear"
+                            android:startX="96"
+                            android:startY="166.9"
+                            android:endX="100.64"
+                            android:endY="67.25">
+                            <item
+                                android:color="#FFA9A8FF"
+                                android:offset=".01"/>
+                            <item
+                                android:color="#00A9A8FF"
+                                android:offset=".79"/>
+                        </gradient>
+                    </aapt:attr>
+                </path>
+            </group>
+        </group>
+        <group>
+            <path
+                android:strokeColor="#FFFFFFFF"
+                android:strokeWidth="12"
+                android:strokeLineCap="round"
+                android:strokeLineJoin="round"
+                android:pathData="M61 90l22.17 22.17a4 4 0 0 0 5.66 0L138 63"/>
+        </group>
+    </group>
 </vector>

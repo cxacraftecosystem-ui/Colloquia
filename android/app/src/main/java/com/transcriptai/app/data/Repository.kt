@@ -38,6 +38,14 @@ class Repository(context: Context) {
         return res.user
     }
 
+    /** Microsoft / Yahoo authorization-code sign-in: hand the code to the backend for token exchange. */
+    suspend fun loginOAuth(provider: String, code: String, redirectUri: String): UserDto {
+        val res = api.login(LoginRequest(provider = provider, code = code, redirectUri = redirectUri))
+        tokenStore.setToken(res.accessToken)
+        tokenStore.setUser(res.user)
+        return res.user
+    }
+
     fun logout() = tokenStore.clear()
 
     // ---------------------------------------------------------------- upload

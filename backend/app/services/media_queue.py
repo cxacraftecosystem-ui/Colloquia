@@ -355,8 +355,15 @@ async def _run_analysis(job: Any, settings: Settings) -> None:
         await _complete_job(job.id, {"status": EMPTY})
         return
 
+    def _guard_rate_limit(res: dict[str, Any]) -> None:
+        # If an analysis sub-call is throttled, abort and let the queue back off + retry the WHOLE
+        # ANALYSIS job (so a 429 never leaves a recording with missing summaries/extractions).
+        if str(res.get("status") or "").upper() == RATE_LIMITED:
+            raise RateLimited(res.get("retryAfter"))
+
     # AI title (and adopt as the display title when the user kept the default).
     title_res = await generate_title(text, settings)
+    _guard_rate_limit(title_res)
     if title_res.get("status") == COMPLETED and title_res.get("title"):
         data = {"aiTitle": title_res["title"]}
         if not recording.title or recording.title.lower().startswith(("recording", "new recording")):
@@ -366,6 +373,7 @@ async def _run_analysis(job: Any, settings: Settings) -> None:
     # Summaries (one row per type, upserted).
     for stype in SUMMARY_TYPES:
         res = await summarize(text, stype, settings)
+        _guard_rate_limit(res)
         if res.get("status") == COMPLETED and res.get("content"):
             await db.summary.upsert(
                 where={"recordingId_type": {"recordingId": recording.id, "type": stype}},
@@ -377,6 +385,7 @@ async def _run_analysis(job: Any, settings: Settings) -> None:
 
     # Action items / decisions / takeaways / deadlines + entities / keywords / topics.
     ext = await extract_items(text, settings)
+    _guard_rate_limit(ext)
     if ext.get("status") == COMPLETED and isinstance(ext.get("data"), dict):
         await _store_extractions(recording.id, ext["data"])
 

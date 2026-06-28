@@ -19,6 +19,9 @@ data class LoginRequest(
     val email: String? = null,
     val password: String? = null,
     val googleIdToken: String? = null,
+    val provider: String? = null,
+    val code: String? = null,
+    val redirectUri: String? = null,
 )
 
 @Serializable
@@ -83,6 +86,9 @@ data class AppSettingsUpdate(
 )
 
 @Serializable
+data class AudioUrlDto(val url: String, val expiresIn: Int = 3600)
+
+@Serializable
 data class SegmentDto(
     val idx: Int,
     val speaker: String? = null,
@@ -105,8 +111,8 @@ data class TranscriptDto(
 @Serializable
 data class SummaryDto(
     val id: String? = null,
-    val type: String,
-    val content: String,
+    val type: String = "BRIEF",
+    val content: String = "",
 )
 
 @Serializable

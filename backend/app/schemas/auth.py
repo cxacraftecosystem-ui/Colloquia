@@ -7,6 +7,11 @@ class LoginRequest(BaseModel):
     email: EmailStr | None = None
     password: str | None = None
     googleIdToken: str | None = None
+    # Generic OAuth authorization-code sign-in (Microsoft / Yahoo): provider + code from the client's
+    # redirect, plus the exact redirectUri used (the provider checks it during exchange).
+    provider: str | None = None
+    code: str | None = None
+    redirectUri: str | None = None
 
 
 class TokenResponse(BaseModel):

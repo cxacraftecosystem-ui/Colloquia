@@ -14,6 +14,34 @@ router = APIRouter(prefix="/recordings", tags=["ai"])
 VALID_SUMMARY_TYPES = {"BRIEF", "DETAILED", "BULLETS", "MINUTES"}
 
 
+def _ensure_ai_ok(res: dict[str, Any]) -> dict[str, Any]:
+    """Turn a non-success AI result into a clean HTTP error so the client never has to parse a
+    `{"status":"FAILED","content":null,...}` body (which crashes strict deserialization) and instead
+    shows a friendly message. Rate-limits map to 429 so the app can say "try again in a moment"."""
+    state = str(res.get("status") or "").upper()
+    if state == "COMPLETED":
+        return res
+    if state == "RATE_LIMITED":
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="The AI service is busy right now. Please try again in a moment.",
+        )
+    if state == "UNAVAILABLE":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=res.get("message") or "AI features are not configured.",
+        )
+    if state == "EMPTY":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="There isn't any transcript text to work with yet.",
+        )
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail=res.get("message") or "The AI request failed. Please try again.",
+    )
+
+
 async def _owned(recording_id: str, current_user: Any) -> Any:
     recording = await db.recording.find_unique(where={"id": recording_id})
     if not recording:
@@ -45,8 +73,7 @@ async def regenerate_summary(recording_id: str, payload: SummaryRegenerate, curr
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid summary type")
     text = await _transcript_text(recording_id)
     res = await ai_service.summarize(text, stype, get_settings())
-    if res.get("status") != "COMPLETED" or not res.get("content"):
-        return res
+    _ensure_ai_ok(res)
     summary = await db.summary.upsert(
         where={"recordingId_type": {"recordingId": recording_id, "type": stype}},
         data={
@@ -98,11 +125,11 @@ async def chat(recording_id: str, payload: ChatRequest, current_user: Any = Depe
 
     await db.chatmessage.create(data={"recordingId": recording_id, "role": "USER", "content": payload.question})
     res = await ai_service.chat_over_transcript(text, history, payload.question, get_settings())
-    answer = res.get("answer")
-    if res.get("status") == "COMPLETED" and answer:
-        msg = await db.chatmessage.create(data={"recordingId": recording_id, "role": "ASSISTANT", "content": answer})
-        return jsonable_encoder(msg)
-    return res
+    _ensure_ai_ok(res)
+    msg = await db.chatmessage.create(
+        data={"recordingId": recording_id, "role": "ASSISTANT", "content": res["answer"]}
+    )
+    return jsonable_encoder(msg)
 
 
 # --------------------------------------------------------------------------- transforms (title / translate / rewrite / tone / custom)
@@ -112,7 +139,8 @@ async def regenerate_title(recording_id: str, current_user: Any = Depends(get_cu
     await _owned(recording_id, current_user)
     text = await _transcript_text(recording_id)
     res = await ai_service.generate_title(text, get_settings())
-    if res.get("status") == "COMPLETED" and res.get("title"):
+    _ensure_ai_ok(res)
+    if res.get("title"):
         await db.recording.update(where={"id": recording_id}, data={"aiTitle": res["title"]})
     return res
 
@@ -122,7 +150,7 @@ async def translate(recording_id: str, payload: TransformRequest, current_user: 
     await _owned(recording_id, current_user)
     text = await _transcript_text(recording_id)
     lang = payload.targetLanguage or "English"
-    return await ai_service.transform_text(text, f"Translate the transcript into {lang}. Keep speaker labels.", get_settings())
+    return _ensure_ai_ok(await ai_service.transform_text(text, f"Translate the transcript into {lang}. Keep speaker labels.", get_settings()))
 
 
 @router.post("/{recording_id}/rewrite")
@@ -130,7 +158,7 @@ async def rewrite(recording_id: str, payload: TransformRequest, current_user: An
     await _owned(recording_id, current_user)
     text = await _transcript_text(recording_id)
     instruction = payload.instruction or "Rewrite the transcript as clean, well-structured prose."
-    return await ai_service.transform_text(text, instruction, get_settings())
+    return _ensure_ai_ok(await ai_service.transform_text(text, instruction, get_settings()))
 
 
 @router.post("/{recording_id}/tone")
@@ -138,7 +166,7 @@ async def convert_tone(recording_id: str, payload: TransformRequest, current_use
     await _owned(recording_id, current_user)
     text = await _transcript_text(recording_id)
     tone = payload.tone or "professional"
-    return await ai_service.transform_text(text, f"Rewrite the transcript content in a {tone} tone.", get_settings())
+    return _ensure_ai_ok(await ai_service.transform_text(text, f"Rewrite the transcript content in a {tone} tone.", get_settings()))
 
 
 @router.post("/{recording_id}/custom")
@@ -147,4 +175,4 @@ async def custom_prompt(recording_id: str, payload: TransformRequest, current_us
     if not payload.instruction:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="instruction required")
     text = await _transcript_text(recording_id)
-    return await ai_service.transform_text(text, payload.instruction, get_settings())
+    return _ensure_ai_ok(await ai_service.transform_text(text, payload.instruction, get_settings()))

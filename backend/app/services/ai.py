@@ -9,7 +9,9 @@ summaries, extraction, chat, translation, rewrite and tone conversion.
 import asyncio
 import json
 import logging
-from typing import Any
+import random
+import time
+from typing import Any, Callable
 
 import requests
 
@@ -26,6 +28,81 @@ _REFINE_MAX_CHARS = 48_000
 # Cap transcript text fed to analysis/chat so a runaway transcript can't blow up the token bill.
 _ANALYSIS_MAX_CHARS = 48_000
 
+# --------------------------------------------------------------------------- HTTP resilience
+# Production-grade transient-error handling: OpenAI/Deepgram occasionally throttle (429) or blip
+# (500/502/503/504). Rather than fail the user's request, every outbound AI HTTP call is wrapped in
+# a bounded exponential-backoff-with-jitter retry that honours the provider's Retry-After header.
+# Sustained throttling still surfaces (so the durable queue can back off and the synchronous routes
+# can return a clean 429), but short spikes are absorbed silently here.
+_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+_MAX_HTTP_RETRIES = 4
+_BACKOFF_BASE_SECONDS = 1.5
+_BACKOFF_CAP_SECONDS = 30.0
+
+
+def retry_after_seconds(response: requests.Response | None) -> float | None:
+    """Parse a Retry-After header (delta-seconds) into a float, if present and valid."""
+    if response is None:
+        return None
+    raw = response.headers.get("Retry-After")
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _backoff_delay(attempt: int, retry_after: float | None) -> float:
+    if retry_after is not None and retry_after > 0:
+        return min(retry_after, _BACKOFF_CAP_SECONDS)
+    # Exponential growth with full jitter: base * 2^attempt, randomised, capped.
+    ceiling = min(_BACKOFF_BASE_SECONDS * (2 ** attempt), _BACKOFF_CAP_SECONDS)
+    return random.uniform(0, ceiling)
+
+
+def _request_with_retry(do_request: Callable[[], requests.Response]) -> requests.Response:
+    """Run a request callable, retrying transient throttling/5xx with exponential backoff + jitter.
+    Returns the first successful (raise_for_status-passing) response, or re-raises the final error."""
+    attempt = 0
+    while True:
+        try:
+            response = do_request()
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            if attempt >= _MAX_HTTP_RETRIES:
+                raise
+            time.sleep(_backoff_delay(attempt, None))
+            attempt += 1
+            continue
+        if response.status_code in _RETRYABLE_STATUS and attempt < _MAX_HTTP_RETRIES:
+            delay = _backoff_delay(attempt, retry_after_seconds(response))
+            logger.info(
+                "AI call %s -> HTTP %s; retry %d/%d in %.1fs",
+                response.url, response.status_code, attempt + 1, _MAX_HTTP_RETRIES, delay,
+            )
+            response.close()
+            time.sleep(delay)
+            attempt += 1
+            continue
+        response.raise_for_status()
+        return response
+
+
+def _failed_result(exc: Exception, **fields: Any) -> dict[str, Any]:
+    """Classify an exhausted AI HTTP error into a result dict. 429/503 -> RATE_LIMITED (transient,
+    the caller backs off / the route returns 429); everything else -> FAILED."""
+    response = getattr(exc, "response", None)
+    code = response.status_code if response is not None else None
+    if code in {429, 503}:
+        return {
+            "available": True,
+            "status": "RATE_LIMITED",
+            "retryAfter": retry_after_seconds(response),
+            "message": f"AI provider rate-limited (HTTP {code}); will retry automatically.",
+            **fields,
+        }
+    return {"available": True, "status": "FAILED", "message": str(exc), **fields}
+
 
 # --------------------------------------------------------------------------- transcription
 
@@ -33,7 +110,7 @@ def _post_openai_transcription(
     content: bytes, filename: str, mime_type: str, settings: Settings
 ) -> dict[str, Any]:
     """One Whisper call returning text + timestamped segments (verbose_json)."""
-    response = requests.post(
+    response = _request_with_retry(lambda: requests.post(
         "https://api.openai.com/v1/audio/transcriptions",
         headers={"Authorization": f"Bearer {settings.openai_api_key}"},
         data={
@@ -43,8 +120,7 @@ def _post_openai_transcription(
         },
         files={"file": (filename, content, mime_type or "application/octet-stream")},
         timeout=300,
-    )
-    response.raise_for_status()
+    ))
     payload = response.json()
     text = str(payload.get("text") or "").strip()
     segments = _segments_from_payload(payload, offset_ms=0)
@@ -133,14 +209,13 @@ def _transcribe_sync(
 def _post_deepgram(content: bytes, mime_type: str, settings: Settings) -> dict[str, Any]:
     """Deepgram prerecorded transcription WITH true acoustic diarization (diarize=true). Returns the
     same shape as the Whisper path but each segment carries a real `speaker` label."""
-    response = requests.post(
+    response = _request_with_retry(lambda: requests.post(
         "https://api.deepgram.com/v1/listen",
         params={"diarize": "true", "punctuate": "true", "utterances": "true", "smart_format": "true"},
         headers={"Authorization": f"Token {settings.deepgram_api_key}", "Content-Type": mime_type or "audio/m4a"},
         data=content,
         timeout=300,
-    )
-    response.raise_for_status()
+    ))
     payload = response.json()
     results = payload.get("results", {})
     utterances = results.get("utterances") or []
@@ -235,7 +310,7 @@ def _post_openai_chat(
     }
     if json_mode:
         body["response_format"] = {"type": "json_object"}
-    response = requests.post(
+    response = _request_with_retry(lambda: requests.post(
         "https://api.openai.com/v1/chat/completions",
         headers={
             "Authorization": f"Bearer {settings.openai_api_key}",
@@ -243,8 +318,7 @@ def _post_openai_chat(
         },
         json=body,
         timeout=120,
-    )
-    response.raise_for_status()
+    ))
     payload = response.json()
     return str(payload["choices"][0]["message"]["content"]).strip()
 
@@ -318,7 +392,7 @@ async def refine_transcript_text(
             "translated": translate_to_english,
         }
     except requests.RequestException as exc:
-        return {"available": True, "status": "FAILED", "refined": None, "message": str(exc)}
+        return _failed_result(exc, refined=None)
 
 
 async def assign_speakers_to_segments(
@@ -380,7 +454,7 @@ async def generate_title(transcript: str, settings: Settings) -> dict[str, Any]:
         )
         return {"available": True, "status": "COMPLETED", "title": title.strip().strip('"')}
     except requests.RequestException as exc:
-        return {"available": True, "status": "FAILED", "title": None, "message": str(exc)}
+        return _failed_result(exc, title=None)
 
 
 async def summarize(transcript: str, summary_type: str, settings: Settings) -> dict[str, Any]:
@@ -400,7 +474,7 @@ async def summarize(transcript: str, summary_type: str, settings: Settings) -> d
         )
         return {"available": True, "status": "COMPLETED", "content": content, "model": settings.openai_chat_model}
     except requests.RequestException as exc:
-        return {"available": True, "status": "FAILED", "content": None, "message": str(exc)}
+        return _failed_result(exc, content=None)
 
 
 async def extract_items(transcript: str, settings: Settings) -> dict[str, Any]:
@@ -432,7 +506,7 @@ async def extract_items(transcript: str, settings: Settings) -> dict[str, Any]:
         data = _extract_json(raw)
         return {"available": True, "status": "COMPLETED", "data": data if isinstance(data, dict) else {}}
     except requests.RequestException as exc:
-        return {"available": True, "status": "FAILED", "data": None, "message": str(exc)}
+        return _failed_result(exc, data=None)
 
 
 async def chat_over_transcript(
@@ -456,7 +530,7 @@ async def chat_over_transcript(
         answer = await _chat(messages, settings, temperature=0.3)
         return {"available": True, "status": "COMPLETED", "answer": answer}
     except requests.RequestException as exc:
-        return {"available": True, "status": "FAILED", "answer": None, "message": str(exc)}
+        return _failed_result(exc, answer=None)
 
 
 async def transform_text(
@@ -479,19 +553,18 @@ async def transform_text(
         )
         return {"available": True, "status": "COMPLETED", "result": result}
     except requests.RequestException as exc:
-        return {"available": True, "status": "FAILED", "result": None, "message": str(exc)}
+        return _failed_result(exc, result=None)
 
 
 # --------------------------------------------------------------------------- embeddings (semantic search)
 
 def _post_openai_embeddings(texts: list[str], settings: Settings) -> list[list[float]]:
-    response = requests.post(
+    response = _request_with_retry(lambda: requests.post(
         "https://api.openai.com/v1/embeddings",
         headers={"Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"},
         json={"model": settings.embedding_model, "input": texts},
         timeout=120,
-    )
-    response.raise_for_status()
+    ))
     payload = response.json()
     return [item["embedding"] for item in payload.get("data", [])]
 
@@ -533,7 +606,7 @@ async def generate_digest(summaries_blob: str, period: str, settings: Settings) 
         )
         return {"available": True, "status": "COMPLETED", "content": content}
     except requests.RequestException as exc:
-        return {"available": True, "status": "FAILED", "content": None, "message": str(exc)}
+        return _failed_result(exc, content=None)
 
 
 async def meeting_coaching(transcript: str, settings: Settings) -> dict[str, Any]:
@@ -552,7 +625,7 @@ async def meeting_coaching(transcript: str, settings: Settings) -> dict[str, Any
         )
         return {"available": True, "status": "COMPLETED", "content": content}
     except requests.RequestException as exc:
-        return {"available": True, "status": "FAILED", "content": None, "message": str(exc)}
+        return _failed_result(exc, content=None)
 
 
 async def conversation_analytics(transcript: str, settings: Settings) -> dict[str, Any]:
@@ -571,7 +644,7 @@ async def conversation_analytics(transcript: str, settings: Settings) -> dict[st
         raw = await _chat([{"role": "system", "content": system}, {"role": "user", "content": clipped}], settings, json_mode=True)
         return {"available": True, "status": "COMPLETED", "data": _extract_json(raw)}
     except requests.RequestException as exc:
-        return {"available": True, "status": "FAILED", "data": None, "message": str(exc)}
+        return _failed_result(exc, data=None)
 
 
 async def voice_command_intent(command: str, settings: Settings) -> dict[str, Any]:
@@ -587,7 +660,7 @@ async def voice_command_intent(command: str, settings: Settings) -> dict[str, An
         raw = await _chat([{"role": "system", "content": system}, {"role": "user", "content": command}], settings, json_mode=True)
         return {"available": True, "status": "COMPLETED", "intent": _extract_json(raw)}
     except requests.RequestException as exc:
-        return {"available": True, "status": "FAILED", "intent": None, "message": str(exc)}
+        return _failed_result(exc, intent=None)
 
 
 async def answer_across(context_blob: str, question: str, settings: Settings) -> dict[str, Any]:
@@ -602,4 +675,4 @@ async def answer_across(context_blob: str, question: str, settings: Settings) ->
         answer = await _chat(messages, settings, temperature=0.3)
         return {"available": True, "status": "COMPLETED", "answer": answer}
     except requests.RequestException as exc:
-        return {"available": True, "status": "FAILED", "answer": None, "message": str(exc)}
+        return _failed_result(exc, answer=None)

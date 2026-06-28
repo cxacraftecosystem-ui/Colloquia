@@ -40,6 +40,15 @@ android {
         buildConfigField("String", "DEFAULT_API_BASE_URL", "\"$apiBaseUrl\"")
         // Same Google OAuth web client id as the field-repo (Credential Manager serverClientId).
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"614092441670-3e5k15srupq9mfpg3aktqfkjvkavu0g3.apps.googleusercontent.com\"")
+
+        // Microsoft (Azure AD) + Yahoo OAuth. Set the client IDs in local.properties once the apps are
+        // registered; the redirect URI below must be registered with each provider verbatim.
+        val microsoftClientId = localProperties.getProperty("microsoftClientId", "")
+        val yahooClientId = localProperties.getProperty("yahooClientId", "")
+        val oauthRedirectUri = localProperties.getProperty("oauthRedirectUri", "com.transcriptai.app://oauth")
+        buildConfigField("String", "MICROSOFT_CLIENT_ID", "\"$microsoftClientId\"")
+        buildConfigField("String", "YAHOO_CLIENT_ID", "\"$yahooClientId\"")
+        buildConfigField("String", "OAUTH_REDIRECT_URI", "\"$oauthRedirectUri\"")
     }
 
     buildFeatures {

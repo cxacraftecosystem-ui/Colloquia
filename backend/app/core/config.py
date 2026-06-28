@@ -31,6 +31,17 @@ class Settings(BaseSettings):
 
     google_client_id: str | None = Field(default=None, alias="GOOGLE_CLIENT_ID")
     google_android_client_id: str | None = Field(default=None, alias="GOOGLE_ANDROID_CLIENT_ID")
+
+    # Microsoft (Azure AD) OAuth — authorization-code flow. tenant "common" allows both personal and
+    # work/school accounts. Absent client id/secret -> the /login Microsoft path returns a clean 400.
+    microsoft_client_id: str | None = Field(default=None, alias="MICROSOFT_CLIENT_ID")
+    microsoft_client_secret: str | None = Field(default=None, alias="MICROSOFT_CLIENT_SECRET")
+    microsoft_tenant: str = Field(default="common", alias="MICROSOFT_TENANT")
+
+    # Yahoo OAuth 2.0 / OpenID Connect — authorization-code flow (confidential client).
+    yahoo_client_id: str | None = Field(default=None, alias="YAHOO_CLIENT_ID")
+    yahoo_client_secret: str | None = Field(default=None, alias="YAHOO_CLIENT_SECRET")
+
     master_admin_email: str = Field(default="", alias="MASTER_ADMIN_EMAIL")
     master_admin_name: str = Field(default="Admin", alias="MASTER_ADMIN_NAME")
 

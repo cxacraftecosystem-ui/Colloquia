@@ -85,6 +85,11 @@ fun SettingsScreen(vm: AppViewModel, nav: NavController) {
                 }
             }
 
+            SectionTitle("Transcript display")
+            SettingRow("Show timestamps", "Display the time (and speaker) on each line") {
+                Switch(checked = vm.showTimestamps, onCheckedChange = { vm.saveShowTimestamps(it) })
+            }
+
             SectionTitle("Notifications")
             SettingRow("Processing & upload notifications", null) {
                 Switch(checked = vm.notifications, onCheckedChange = { vm.saveNotifications(it) })

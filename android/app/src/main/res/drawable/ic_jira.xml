@@ -1,6 +1,12 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Brand mark from simple-icons (authoritative). 24x24 single path. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <path android:fillColor="#2684FF" android:pathData="M11.571 11.513H0a5.218 5.218 0 0 0 5.232 5.215h2.13v2.057A5.215 5.215 0 0 0 12.575 24V12.518a1.005 1.005 0 0 0-1.005-1.005zm5.723-5.756H5.736a5.215 5.215 0 0 0 5.215 5.214h2.129v2.058a5.218 5.218 0 0 0 5.215 5.214V6.758a1.001 1.001 0 0 0-1.001-1.001zM23.013 0H11.455a5.215 5.215 0 0 0 5.215 5.215h2.129v2.057A5.215 5.215 0 0 0 24 12.483V1.005A1.001 1.001 0 0 0 23.013 0Z" />
+    android:width="512dp"
+    android:height="512dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <path
+        android:fillColor="#FF1868DB"
+        android:pathData="M0 128C0 57.31 57.31 0 128 0h256c70.69 0 128 57.31 128 128v256c0 70.69-57.31 128-128 128h-256C57.31 512 0 454.69 0 384v-256z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M189.54 324.04H160.69c-43.51 0-74.72-24.48-74.72-60.32h155.12c8.04 0 13.25 5.24 13.24 12.68V419.77c-38.78 0-64.79-28.85-64.79-69.07V324.04z m76.61-71.24h-28.84c-43.51 0-74.73-24.04-74.73-59.89h155.12c8.04 0 13.72 4.81 13.72 12.23v143.37c-38.78 0-65.27-28.84-65.27-69.06v-26.65z m77.09-70.82h-28.84c-43.51 0-74.73-24.48-74.73-60.32h155.12c8.04 0 13.25 5.24 13.25 12.24v143.37c-38.78 0-64.8-28.85-64.8-69.06V181.98z"/>
 </vector>

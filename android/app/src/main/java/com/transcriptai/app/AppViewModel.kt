@@ -73,6 +73,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var notifications by mutableStateOf(repo.prefs.notifications)
         private set
+    var showTimestamps by mutableStateOf(repo.prefs.showTimestamps)
+        private set
     var transcriptionMode by mutableStateOf("REFINED")
         private set
 
@@ -114,6 +116,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             refreshAll()
         } catch (e: Exception) {
             error = humanError(e, "Google sign-in failed."); onDone(false)
+        } finally { loading = false }
+    }
+
+    /** Microsoft / Yahoo sign-in completion (after the browser returns an authorization code). */
+    fun loginOAuth(provider: String, code: String, onDone: (Boolean) -> Unit) = io {
+        loading = true
+        try {
+            user = repo.loginOAuth(provider, code, com.transcriptai.app.data.OAuthClient.redirectUri)
+            onDone(true)
+            refreshAll()
+        } catch (e: Exception) {
+            error = humanError(e, "${provider.lowercase().replaceFirstChar { it.uppercase() }} sign-in failed."); onDone(false)
         } finally { loading = false }
     }
 
@@ -273,6 +287,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun saveHighQuality(v: Boolean) { highQuality = v; repo.prefs.highQuality = v }
     fun saveAutoUpload(v: Boolean) { autoUpload = v; repo.prefs.autoUpload = v }
     fun saveNotifications(v: Boolean) { notifications = v; repo.prefs.notifications = v }
+    fun saveShowTimestamps(v: Boolean) { showTimestamps = v; repo.prefs.showTimestamps = v }
 
     fun loadAppSettings() = io { transcriptionMode = repo.appSettings().transcriptionMode }
 

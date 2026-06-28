@@ -16,8 +16,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import androidx.compose.ui.platform.LocalContext
 import com.transcriptai.app.AppViewModel
 import com.transcriptai.app.data.GoogleAuthClient
+import com.transcriptai.app.data.OAuthClient
 import kotlinx.coroutines.launch
 
 @Composable
@@ -25,6 +27,7 @@ fun LoginScreen(vm: AppViewModel, activity: ComponentActivity, nav: NavControlle
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val google = remember { GoogleAuthClient(activity) }
 
     fun goLibrary() {
@@ -92,10 +95,35 @@ fun LoginScreen(vm: AppViewModel, activity: ComponentActivity, nav: NavControlle
             Text("Continue with Google")
         }
 
+        Spacer(Modifier.height(12.dp))
+        OAuthButton("Continue with Microsoft", R.drawable.ic_microsoft) {
+            if (OAuthClient.isConfigured("MICROSOFT")) OAuthClient.launch(context, "MICROSOFT")
+            else vm.error = "Microsoft sign-in isn't set up yet."
+        }
+        Spacer(Modifier.height(12.dp))
+        OAuthButton("Continue with Yahoo", R.drawable.ic_yahoo) {
+            if (OAuthClient.isConfigured("YAHOO")) OAuthClient.launch(context, "YAHOO")
+            else vm.error = "Yahoo sign-in isn't set up yet."
+        }
+
         if (vm.loading) { Spacer(Modifier.height(16.dp)); CircularProgressIndicator() }
         vm.error?.let {
             Spacer(Modifier.height(12.dp))
             Text(it, color = MaterialTheme.colorScheme.error)
         }
+    }
+}
+
+@Composable
+private fun OAuthButton(label: String, iconRes: Int, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Icon(
+            painter = painterResource(id = iconRes),
+            contentDescription = null,
+            tint = Color.Unspecified,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(label)
     }
 }

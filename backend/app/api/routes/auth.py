@@ -11,6 +11,7 @@ from app.core.db import db
 from app.core.deps import get_current_user
 from app.core.security import create_access_token, verify_password
 from app.schemas.auth import LoginRequest, ProfileUpdate, TokenResponse
+from app.services import oauth as oauth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -68,10 +69,38 @@ async def login_with_google(token: str) -> Any:
     )
 
 
+async def login_with_oauth_code(provider: str, code: str, redirect_uri: str | None) -> Any:
+    """Microsoft / Yahoo authorization-code sign-in: exchange the code, then upsert the user."""
+    settings = get_settings()
+    if not redirect_uri:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing redirectUri")
+    try:
+        profile = oauth_service.exchange_code(provider, code, redirect_uri, settings)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    email = profile["email"]
+    auth_provider = provider.upper()
+    role = role_for_email(email)
+    name = settings.master_admin_name if role == "MASTER_ADMIN" else (profile.get("name") or email.split("@")[0])
+    existing = await db.user.find_unique(where={"email": email})
+    if existing:
+        data: dict[str, Any] = {"name": name, "authProvider": auth_provider}
+        if profile.get("picture"):
+            data["avatarUrl"] = profile["picture"]
+        if role == "MASTER_ADMIN":
+            data["role"] = "MASTER_ADMIN"
+        return await db.user.update(where={"email": email}, data=data)
+    return await db.user.create(
+        data={"email": email, "name": name, "avatarUrl": profile.get("picture"), "authProvider": auth_provider, "role": role}
+    )
+
+
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest) -> dict[str, Any]:
     if payload.googleIdToken:
         user = await login_with_google(payload.googleIdToken)
+    elif payload.provider and payload.code:
+        user = await login_with_oauth_code(payload.provider, payload.code, payload.redirectUri)
     else:
         user = await db.user.find_unique(where={"email": (payload.email or "").lower()})
         if not user or not verify_password(payload.password or "", user.passwordHash):

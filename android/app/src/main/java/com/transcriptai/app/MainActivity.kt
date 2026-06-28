@@ -1,5 +1,7 @@
 package com.transcriptai.app
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,15 +16,24 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.transcriptai.app.data.OAuthClient
 import com.transcriptai.app.recording.Notifications
 import com.transcriptai.app.ui.*
 
 class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
+    private val deepLink = mutableStateOf<Uri?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        deepLink.value = intent.data
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Notifications.ensureChannel(this)
+        deepLink.value = intent?.data
         setContent {
             ColloquiaTheme(darkMode = vm.darkMode) {
                 val nav = rememberNavController()
@@ -30,6 +41,24 @@ class MainActivity : ComponentActivity() {
 
                 // Check for an OTA update once we're signed in.
                 LaunchedEffect(vm.isLoggedIn) { if (vm.isLoggedIn) vm.checkForUpdate(silent = true) }
+
+                // Handle the OAuth redirect (Microsoft / Yahoo) -> exchange the code, then go home.
+                val link = deepLink.value
+                LaunchedEffect(link) {
+                    if (link != null && link.scheme == "com.transcriptai.app") {
+                        val provider = OAuthClient.providerForState(link.getQueryParameter("state"))
+                        val code = link.getQueryParameter("code")
+                        if (provider != null && code != null) {
+                            vm.loginOAuth(provider, code) { ok ->
+                                if (ok) nav.navigate("library") { popUpTo("login") { inclusive = true } }
+                            }
+                        } else {
+                            vm.error = link.getQueryParameter("error_description")
+                                ?: link.getQueryParameter("error")?.let { "Sign-in was cancelled." }
+                        }
+                        deepLink.value = null
+                    }
+                }
 
                 NavHost(navController = nav, startDestination = start) {
                     composable("login") { LoginScreen(vm, this@MainActivity, nav) }

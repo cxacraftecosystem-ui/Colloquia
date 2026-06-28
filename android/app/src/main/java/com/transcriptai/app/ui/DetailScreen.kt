@@ -5,20 +5,29 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.core.content.FileProvider
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Subject
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.transcriptai.app.AppViewModel
@@ -38,11 +47,32 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
     var menuOpen by remember { mutableStateOf(false) }
     var renameOpen by remember { mutableStateOf(false) }
 
+    // In-app playback (private bucket -> short-lived presigned URL fetched once).
+    val player = rememberRecordingPlayer()
+    var audioUrl by remember(id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(rec?.id, rec?.objectKey) {
+        if (rec?.objectKey != null && audioUrl == null) {
+            runCatching { audioUrl = vm.repo.api.getAudioUrl(rec.id).url }
+        }
+    }
+    // While transcription is in flight, poll so the transcript/summary appear automatically (no manual
+    // refresh). The effect is keyed on the status, so it stops as soon as the recording is done.
+    LaunchedEffect(rec?.transcriptStatus) {
+        val pending = setOf("QUEUED", "PROCESSING", "PENDING")
+        if (rec != null && rec.transcriptStatus.uppercase() in pending) {
+            while (true) {
+                kotlinx.coroutines.delay(5000)
+                vm.loadDetail(id)
+                if (vm.detail?.transcriptStatus?.uppercase() !in pending) break
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(rec?.aiTitle ?: rec?.title ?: "Recording", maxLines = 1) },
-                navigationIcon = { IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.Default.ArrowBack, "Back") } },
+                title = { Text(rec?.aiTitle ?: rec?.title ?: "Recording", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                navigationIcon = { IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
                     if (rec != null) {
                         IconButton(onClick = { vm.toggleFavorite(rec.id) }) {
@@ -50,22 +80,20 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
                         }
                         IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, "More") }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(text = { Text("Rename") }, onClick = { menuOpen = false; renameOpen = true })
-                            DropdownMenuItem(text = { Text(if (rec.isPinned) "Unpin" else "Pin") }, onClick = { menuOpen = false; vm.togglePin(rec.id) })
-                            DropdownMenuItem(text = { Text(if (rec.isArchived) "Unarchive" else "Archive") }, onClick = { menuOpen = false; vm.toggleArchive(rec.id) })
-                            DropdownMenuItem(text = { Text("Regenerate title (AI)") }, onClick = { menuOpen = false; vm.regenerateTitle(rec.id) })
-                            DropdownMenuItem(text = { Text("Re-transcribe") }, onClick = { menuOpen = false; vm.transcribeNow(rec.id) })
+                            MenuItem("Rename", Icons.Default.Edit) { menuOpen = false; renameOpen = true }
+                            MenuItem(if (rec.isPinned) "Unpin" else "Pin", Icons.Default.PushPin) { menuOpen = false; vm.togglePin(rec.id) }
+                            MenuItem(if (rec.isArchived) "Unarchive" else "Archive", Icons.Default.Archive) { menuOpen = false; vm.toggleArchive(rec.id) }
+                            MenuItem("Regenerate title (AI)", Icons.Default.AutoAwesome) { menuOpen = false; vm.regenerateTitle(rec.id) }
+                            MenuItem("Re-transcribe", Icons.Default.Refresh) { menuOpen = false; vm.transcribeNow(rec.id) }
                             HorizontalDivider()
-                            DropdownMenuItem(text = { Text("Copy transcript") }, onClick = { menuOpen = false; copyText(context, transcriptText(rec)) })
-                            DropdownMenuItem(text = { Text("Share transcript") }, onClick = { menuOpen = false; shareText(context, transcriptText(rec)) })
-                            listOf("txt", "md", "pdf", "docx").forEach { fmt ->
-                                DropdownMenuItem(text = { Text("Export .$fmt") }, onClick = {
-                                    menuOpen = false
-                                    scope.launch { exportAndShare(context, vm, rec.id, rec.title, fmt) }
-                                })
-                            }
+                            MenuItem("Copy transcript", Icons.Default.ContentCopy) { menuOpen = false; copyText(context, transcriptText(rec)) }
+                            MenuItem("Share transcript", Icons.Default.Share) { menuOpen = false; shareText(context, transcriptText(rec)) }
+                            MenuItem("Export .txt", Icons.Default.Description) { menuOpen = false; scope.launch { exportAndShare(context, vm, rec.id, rec.title, "txt") } }
+                            MenuItem("Export .md", Icons.AutoMirrored.Filled.Article) { menuOpen = false; scope.launch { exportAndShare(context, vm, rec.id, rec.title, "md") } }
+                            MenuItem("Export .pdf", Icons.Default.PictureAsPdf) { menuOpen = false; scope.launch { exportAndShare(context, vm, rec.id, rec.title, "pdf") } }
+                            MenuItem("Export .docx", Icons.Default.Description) { menuOpen = false; scope.launch { exportAndShare(context, vm, rec.id, rec.title, "docx") } }
                             HorizontalDivider()
-                            DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; vm.delete(rec.id); nav.popBackStack() })
+                            MenuItem("Delete", Icons.Default.Delete, destructive = true) { menuOpen = false; vm.delete(rec.id); nav.popBackStack() }
                         }
                     }
                 },
@@ -82,13 +110,30 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
                 Spacer(Modifier.width(8.dp))
                 Text(fmtDuration(rec.durationSec), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
+            audioUrl?.let { url ->
+                PlaybackBar(player, url, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp))
+            }
+            val tabs = listOf(
+                "Transcript" to Icons.AutoMirrored.Filled.Subject,
+                "Summary" to Icons.Default.Summarize,
+                "Actions" to Icons.Default.Checklist,
+                "Chat" to Icons.Default.Forum,
+            )
             TabRow(selectedTabIndex = tab) {
-                listOf("Transcript", "Summary", "Actions", "Chat").forEachIndexed { i, label ->
-                    Tab(selected = tab == i, onClick = { tab = i }, text = { Text(label) })
+                tabs.forEachIndexed { i, (label, icon) ->
+                    Tab(
+                        selected = tab == i,
+                        onClick = { tab = i },
+                        icon = { Icon(icon, null, Modifier.size(20.dp)) },
+                        text = {
+                            // Never wrap: single line, no soft-wrap, ellipsis only as a last resort.
+                            Text(label, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                        },
+                    )
                 }
             }
             when (tab) {
-                0 -> TranscriptTab(vm, rec)
+                0 -> TranscriptTab(vm, rec, player, audioUrl)
                 1 -> SummaryTab(vm, rec)
                 2 -> ActionsTab(vm, rec)
                 3 -> ChatTab(vm, rec)
@@ -96,23 +141,34 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
         }
     }
 
-    if (renameOpen && rec != null) {
-        var newName by remember { mutableStateOf(rec.title) }
+    if (renameOpen) {
+        var newName by remember { mutableStateOf(rec?.title ?: "") }
         AlertDialog(
             onDismissRequest = { renameOpen = false },
             title = { Text("Rename") },
             text = { OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true) },
-            confirmButton = { TextButton(onClick = { vm.rename(rec.id, newName); renameOpen = false }) { Text("Save") } },
+            confirmButton = { TextButton(onClick = { rec?.let { vm.rename(it.id, newName) }; renameOpen = false }) { Text("Save") } },
             dismissButton = { TextButton(onClick = { renameOpen = false }) { Text("Cancel") } },
         )
     }
 }
 
 @Composable
-private fun TranscriptTab(vm: AppViewModel, rec: RecordingDto) {
+private fun MenuItem(label: String, icon: ImageVector, destructive: Boolean = false, onClick: () -> Unit) {
+    val tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+    DropdownMenuItem(
+        text = { Text(label, color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) },
+        leadingIcon = { Icon(icon, null, tint = tint) },
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun TranscriptTab(vm: AppViewModel, rec: RecordingDto, player: RecordingPlayer, audioUrl: String?) {
     val segments = rec.transcript?.segments ?: emptyList()
     var query by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<SegmentDto?>(null) }
+    val showTimestamps = vm.showTimestamps
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         OutlinedTextField(
@@ -140,14 +196,27 @@ private fun TranscriptTab(vm: AppViewModel, rec: RecordingDto) {
             }
         } else {
             val filtered = if (query.isBlank()) segments else segments.filter { (it.editedText ?: it.text).contains(query, ignoreCase = true) }
+            val canSeek = audioUrl != null
             LazyColumn(Modifier.fillMaxSize()) {
                 items(filtered, key = { it.idx }) { seg ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                        Column(Modifier.width(64.dp)) {
-                            Text(fmtMs(seg.startMs), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
-                            seg.speaker?.let { Text(it, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold) }
+                    val isCurrent = canSeek && player.positionMs >= seg.startMs && player.positionMs < seg.endMs
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .background(if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
+                            .clickable(enabled = canSeek) { audioUrl?.let { player.ensureLoaded(it); player.seekTo(seg.startMs.toLong()) } }
+                            .padding(vertical = 8.dp, horizontal = 4.dp),
+                    ) {
+                        if (showTimestamps) {
+                            Column(Modifier.width(64.dp)) {
+                                Text(
+                                    fmtMs(seg.startMs),
+                                    color = if (canSeek) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                                seg.speaker?.let { Text(it, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold) }
+                            }
+                            Spacer(Modifier.width(8.dp))
                         }
-                        Spacer(Modifier.width(8.dp))
                         Text(seg.editedText ?: seg.text, Modifier.weight(1f))
                         IconButton(onClick = { editing = seg }, modifier = Modifier.size(28.dp)) {
                             Icon(Icons.Default.Edit, "Edit", modifier = Modifier.size(16.dp))
@@ -181,7 +250,7 @@ private fun SummaryTab(vm: AppViewModel, rec: RecordingDto) {
     Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         ScrollableTabRowChips(types, selected) { selected = it }
         Spacer(Modifier.height(12.dp))
-        if (summary != null) {
+        if (summary != null && summary.content.isNotBlank()) {
             Text(summary.content)
         } else {
             Text("No ${selected.lowercase()} summary yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -190,7 +259,7 @@ private fun SummaryTab(vm: AppViewModel, rec: RecordingDto) {
         Row {
             Button(onClick = { vm.regenerateSummary(rec.id, selected) {} }) { Text("Generate ${selected.lowercase()}") }
             Spacer(Modifier.width(8.dp))
-            summary?.let { OutlinedButton(onClick = { copyText(context, it.content) }) { Text("Copy") } }
+            summary?.takeIf { it.content.isNotBlank() }?.let { OutlinedButton(onClick = { copyText(context, it.content) }) { Text("Copy") } }
         }
         Spacer(Modifier.height(40.dp))
     }
@@ -250,7 +319,7 @@ private fun ChatTab(vm: AppViewModel, rec: RecordingDto) {
                 keyboardOptions = KeyboardOptions(),
             )
             IconButton(onClick = { if (input.isNotBlank()) { vm.sendChat(rec.id, input.trim()); input = "" } }) {
-                Icon(Icons.Default.Send, "Send")
+                Icon(Icons.AutoMirrored.Filled.Send, "Send")
             }
         }
     }

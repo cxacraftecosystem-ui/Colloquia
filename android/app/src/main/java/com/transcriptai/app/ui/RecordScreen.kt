@@ -36,6 +36,7 @@ fun RecordScreen(vm: AppViewModel, nav: NavController) {
     val state by RecorderController.state.collectAsState()
     var elapsed by remember { mutableStateOf(0L) }
     var amplitude by remember { mutableStateOf(0) }
+    val waveform = remember { mutableStateListOf<Float>() }
     var title by remember { mutableStateOf("") }
     var hasMic by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) }
     var confirmDiscard by remember { mutableStateOf(false) }
@@ -71,10 +72,14 @@ fun RecordScreen(vm: AppViewModel, nav: NavController) {
             RecorderController.tick()
             elapsed = RecorderController.currentElapsedMs()
             amplitude = RecorderController.amplitude()
-            delay(120)
+            // Perceptual scaling (sqrt) so quiet speech still moves the bars; floor keeps a visible tick.
+            val level = kotlin.math.sqrt((amplitude.coerceIn(0, 32767)).toFloat() / 32767f).coerceIn(0.04f, 1f)
+            waveform.add(level)
+            if (waveform.size > 240) waveform.removeAt(0)
+            delay(90)
         }
         if (state == RecState.PAUSED) elapsed = RecorderController.currentElapsedMs()
-        if (state == RecState.IDLE) { elapsed = 0; amplitude = 0 }
+        if (state == RecState.IDLE) { elapsed = 0; amplitude = 0; waveform.clear() }
     }
 
     Scaffold(
@@ -99,9 +104,9 @@ fun RecordScreen(vm: AppViewModel, nav: NavController) {
             if (vm.noiseCancellation && state != RecState.IDLE) {
                 Text("Noise cancellation on", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
-            Spacer(Modifier.height(16.dp))
-            val level = (amplitude.coerceIn(0, 20000)).toFloat() / 20000f
-            LinearProgressIndicator(progress = { level }, modifier = Modifier.fillMaxWidth().height(8.dp))
+            Spacer(Modifier.height(20.dp))
+            // Live WhatsApp-style waveform that rides the voice's loudness while recording.
+            Waveform(amplitudes = waveform, paused = state == RecState.PAUSED)
 
             Spacer(Modifier.height(36.dp))
 
@@ -114,7 +119,7 @@ fun RecordScreen(vm: AppViewModel, nav: NavController) {
                             onClick = { RecorderController.start(context, vm.noiseCancellation, vm.highQuality); RecorderService.start(context) },
                             modifier = Modifier.size(96.dp),
                             shape = MaterialTheme.shapes.large,
-                        ) { Icon(Icons.Default.Mic, "Start", modifier = Modifier.size(40.dp)) }
+                        ) { Icon(Icons.Default.Mic, "Start", modifier = Modifier.size(52.dp)) }
                     }
                     RecState.RECORDING, RecState.PAUSED -> {
                         Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -122,16 +127,17 @@ fun RecordScreen(vm: AppViewModel, nav: NavController) {
                             FilledTonalButton(
                                 onClick = { confirmDiscard = true },
                                 modifier = Modifier.size(64.dp),
+                                contentPadding = PaddingValues(0.dp),
                                 colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                            ) { Icon(Icons.Default.Delete, "Discard", modifier = Modifier.size(26.dp)) }
+                            ) { Icon(Icons.Default.Delete, "Discard", modifier = Modifier.size(32.dp)) }
                             // Pause / resume
                             if (state == RecState.RECORDING) {
-                                FilledTonalButton(onClick = { RecorderController.pause() }, modifier = Modifier.size(72.dp)) {
-                                    Icon(Icons.Default.Pause, "Pause", modifier = Modifier.size(30.dp))
+                                FilledTonalButton(onClick = { RecorderController.pause() }, modifier = Modifier.size(72.dp), contentPadding = PaddingValues(0.dp)) {
+                                    Icon(Icons.Default.Pause, "Pause", modifier = Modifier.size(40.dp))
                                 }
                             } else {
-                                FilledTonalButton(onClick = { RecorderController.resume() }, modifier = Modifier.size(72.dp)) {
-                                    Icon(Icons.Default.PlayArrow, "Resume", modifier = Modifier.size(30.dp))
+                                FilledTonalButton(onClick = { RecorderController.resume() }, modifier = Modifier.size(72.dp), contentPadding = PaddingValues(0.dp)) {
+                                    Icon(Icons.Default.PlayArrow, "Resume", modifier = Modifier.size(40.dp))
                                 }
                             }
                             // Stop & save
@@ -148,7 +154,8 @@ fun RecordScreen(vm: AppViewModel, nav: NavController) {
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                 modifier = Modifier.size(72.dp),
-                            ) { Icon(Icons.Default.Check, "Stop & save", modifier = Modifier.size(30.dp)) }
+                                contentPadding = PaddingValues(0.dp),
+                            ) { Icon(Icons.Default.Check, "Stop & save", modifier = Modifier.size(40.dp)) }
                         }
                     }
                 }

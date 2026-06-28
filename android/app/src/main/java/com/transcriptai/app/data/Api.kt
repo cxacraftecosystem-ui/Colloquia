@@ -42,6 +42,9 @@ interface TranscriptApi {
     @GET("recordings/{id}")
     suspend fun getRecording(@Path("id") id: String): RecordingDto
 
+    @GET("recordings/{id}/audio-url")
+    suspend fun getAudioUrl(@Path("id") id: String): AudioUrlDto
+
     @PATCH("recordings/{id}")
     suspend fun updateRecording(@Path("id") id: String, @Body body: RecordingUpdate): RecordingDto
 

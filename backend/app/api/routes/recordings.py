@@ -8,7 +8,7 @@ from app.core.db import db
 from app.core.deps import assert_owns, get_current_user
 from app.schemas.records import RecordingUpdate, TagAssign
 from app.services.pagination import normalize_pagination, page_payload
-from app.services.s3 import delete_object
+from app.services.s3 import delete_object, presign_get_url
 
 router = APIRouter(prefix="/recordings", tags=["recordings"])
 
@@ -101,6 +101,16 @@ async def get_recording(recording_id: str, current_user: Any = Depends(get_curre
     recording = await _owned(recording_id, current_user, DETAIL_INCLUDE)
     await db.recording.update(where={"id": recording_id}, data={"lastViewedAt": datetime.now(UTC)})
     return _serialize(recording)
+
+
+@router.get("/{recording_id}/audio-url")
+async def get_audio_url(recording_id: str, current_user: Any = Depends(get_current_user)) -> dict[str, Any]:
+    """A short-lived presigned GET URL the client can stream/seek for in-app playback. The media
+    bucket is private, so a plain object URL won't play — this is the only way to hear a recording."""
+    recording = await _owned(recording_id, current_user)
+    if not recording.objectKey:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This recording has no audio file.")
+    return {"url": presign_get_url(recording.objectKey, expires=3600), "expiresIn": 3600}
 
 
 @router.patch("/{recording_id}")
