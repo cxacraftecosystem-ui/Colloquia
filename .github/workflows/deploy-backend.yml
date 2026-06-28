@@ -49,6 +49,14 @@ jobs:
         env:
           BACKEND_ENV: ${{ secrets.BACKEND_ENV }}
 
+      - name: Write FCM service-account JSON on the server (for push, HTTP v1)
+        if: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON != '' }}
+        run: |
+          printf '%s' "$FCM_JSON" | ssh ubuntu@${{ secrets.EC2_HOST }} \
+            'cat > /home/ubuntu/app/backend/fcm-service-account.json && chmod 600 /home/ubuntu/app/backend/fcm-service-account.json'
+        env:
+          FCM_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
+
       - name: Install deps, create/sync tables, restart
         run: |
           ssh ubuntu@${{ secrets.EC2_HOST }} 'bash -s' <<'REMOTE'

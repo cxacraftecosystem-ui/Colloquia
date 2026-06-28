@@ -265,6 +265,12 @@ async def _run_transcription(job: Any, settings: Settings) -> None:
 
     await _store_transcript(recording, result, settings)
     await _complete_job(job.id, {"status": status, "segments": len(result.get("segments") or [])})
+    # Push "transcript ready" to the owner's devices (best-effort; no-op without FCM configured).
+    try:
+        from app.services import fcm
+        await fcm.send_to_user(recording.userId, "Transcript ready", recording.title or "Your recording", settings)
+    except Exception:  # noqa: BLE001
+        pass
     # Chain the AI analysis pass so the transcript appears immediately and enrichments fill in after.
     if status == COMPLETED:
         await enqueue_job(recording.id, ANALYSIS, job.requestedById, settings)

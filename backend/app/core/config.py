@@ -52,8 +52,10 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="text-embedding-3-small", alias="OPENAI_EMBEDDING_MODEL")
     # Optional diarization provider key (e.g. Deepgram). Absent -> chat-model labelling is used.
     deepgram_api_key: str | None = Field(default=None, alias="DEEPGRAM_API_KEY")
-    # Optional FCM server key for real push sends. Absent -> tokens are stored but no send is made.
-    fcm_server_key: str | None = Field(default=None, alias="FCM_SERVER_KEY")
+    # FCM HTTP v1 (the legacy server key is decommissioned). Point this at a Firebase service-account
+    # JSON file; the backend mints a short-lived OAuth token from it per send. Absent -> tokens are
+    # stored but no push is sent (graceful no-op).
+    fcm_service_account_file: str | None = Field(default=None, alias="FCM_SERVICE_ACCOUNT_FILE")
 
     model_config = SettingsConfigDict(
         env_file=".env",
