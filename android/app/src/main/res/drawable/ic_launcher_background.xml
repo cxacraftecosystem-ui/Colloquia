@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Colloquia launcher background: warm near-black editorial ink with two subtle atmospheric
+     gradient orbs (lavender + sky), per DESIGN-elevenlabs.md. Orbs are pure atmosphere. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path android:pathData="M0,0h108v108h-108z" android:fillColor="#0C0A09" />
+
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="30"
+                android:centerY="28"
+                android:gradientRadius="70"
+                android:startColor="#5AC8B8E0"
+                android:endColor="#00C8B8E0" />
+        </aapt:attr>
+    </path>
+
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="84"
+                android:centerY="88"
+                android:gradientRadius="62"
+                android:startColor="#47A8C8E8"
+                android:endColor="#00A8C8E8" />
+        </aapt:attr>
+    </path>
+</vector>

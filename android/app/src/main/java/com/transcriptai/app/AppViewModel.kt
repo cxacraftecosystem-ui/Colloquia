@@ -11,7 +11,23 @@ import com.transcriptai.app.recording.Notifications
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import retrofit2.HttpException
 import java.io.File
+import java.io.IOException
+
+/** Turn raw network/HTTP exceptions into plain-language messages a non-technical user can act on. */
+fun humanError(e: Throwable, fallback: String = "Something went wrong. Please try again."): String = when (e) {
+    is HttpException -> when (e.code()) {
+        401 -> "Your session expired. Please sign in again."
+        403 -> "You don't have access to that."
+        404 -> "We couldn't find that."
+        429 -> "Too many requests right now — please wait a moment and try again."
+        in 500..599 -> "Our server had a hiccup. Please try again in a moment."
+        else -> fallback
+    }
+    is IOException -> "You appear to be offline. Check your connection and try again."
+    else -> e.message?.takeIf { it.isNotBlank() } ?: fallback
+}
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val appCtx = app.applicationContext
@@ -50,7 +66,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         try {
             block()
         } catch (e: Exception) {
-            error = e.message ?: "Something went wrong"
+            error = humanError(e)
         }
     }
 
@@ -64,7 +80,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             onDone(true)
             refreshAll()
         } catch (e: Exception) {
-            error = e.message ?: "Login failed"; onDone(false)
+            error = if (e is HttpException && e.code() == 401) "Incorrect email or password." else humanError(e, "Login failed.")
+            onDone(false)
         } finally { loading = false }
     }
 
@@ -75,7 +92,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             onDone(true)
             refreshAll()
         } catch (e: Exception) {
-            error = e.message ?: "Google sign-in failed"; onDone(false)
+            error = humanError(e, "Google sign-in failed."); onDone(false)
         } finally { loading = false }
     }
 

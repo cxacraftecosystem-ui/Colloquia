@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Self-contained Colloquia brand medallion for in-app use (login, splash). Ink circle with a
+     soft atmospheric orb and the off-white C + waveform mark. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Ink medallion -->
+    <path
+        android:pathData="M54,4 A50,50 0 1 1 53.99,4 Z"
+        android:fillColor="#0C0A09" />
+
+    <!-- Atmospheric orb -->
+    <path android:pathData="M54,4 A50,50 0 1 1 53.99,4 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="36"
+                android:centerY="34"
+                android:gradientRadius="58"
+                android:startColor="#66C8B8E0"
+                android:endColor="#00C8B8E0" />
+        </aapt:attr>
+    </path>
+
+    <!-- The "C" -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#F5F5F5"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"
+        android:pathData="M66.6,38 A21,21 0 1 0 66.6,72" />
+
+    <!-- Voice waveform -->
+    <path android:fillColor="#00000000" android:strokeColor="#F5F5F5" android:strokeWidth="4.6"
+        android:strokeLineCap="round" android:pathData="M48,51 L48,59" />
+    <path android:fillColor="#00000000" android:strokeColor="#F5F5F5" android:strokeWidth="4.6"
+        android:strokeLineCap="round" android:pathData="M55,46 L55,64" />
+    <path android:fillColor="#00000000" android:strokeColor="#F5F5F5" android:strokeWidth="4.6"
+        android:strokeLineCap="round" android:pathData="M62,51 L62,59" />
+</vector>

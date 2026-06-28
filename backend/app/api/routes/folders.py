@@ -16,12 +16,21 @@ def _serialize(value: Any) -> Any:
 
 @router.get("")
 async def list_folders(current_user: Any = Depends(get_current_user)) -> list[dict[str, Any]]:
+    # NOTE: do not use a Prisma `_count` relation-aggregation include here — prisma-client-py
+    # raises on serializing it, which surfaced as a hard HTTP 500 on every post-login refresh.
+    # A plain `count()` per folder (the same call analytics uses) is reliable and folders are few.
     folders = await db.folder.find_many(
         where={"userId": current_user.id},
-        include={"_count": {"select": {"recordings": True}}},
         order={"name": "asc"},
     )
-    return _serialize(folders)
+    out: list[dict[str, Any]] = []
+    for folder in folders:
+        data = _serialize(folder)
+        data["recordingCount"] = await db.recording.count(
+            where={"userId": current_user.id, "folderId": folder.id}
+        )
+        out.append(data)
+    return out
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Colloquia mark: an off-white "C" (Colloquia) cradling a 3-bar voice waveform (record /
+     transcribe). Content sits inside the adaptive-icon safe zone (centre ~66 of 108). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- The "C": a >180° arc open on the right. -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#F5F5F5"
+        android:strokeWidth="8.5"
+        android:strokeLineCap="round"
+        android:pathData="M66.6,36 A22,22 0 1 0 66.6,72" />
+
+    <!-- Voice waveform nested in the C's counter. -->
+    <path android:fillColor="#00000000" android:strokeColor="#F5F5F5" android:strokeWidth="5"
+        android:strokeLineCap="round" android:pathData="M47,50 L47,58" />
+    <path android:fillColor="#00000000" android:strokeColor="#F5F5F5" android:strokeWidth="5"
+        android:strokeLineCap="round" android:pathData="M54,45 L54,63" />
+    <path android:fillColor="#00000000" android:strokeColor="#F5F5F5" android:strokeWidth="5"
+        android:strokeLineCap="round" android:pathData="M61,50 L61,58" />
+</vector>

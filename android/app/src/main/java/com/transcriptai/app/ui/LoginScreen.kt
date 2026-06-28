@@ -1,6 +1,7 @@
 package com.transcriptai.app.ui
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -35,8 +36,18 @@ fun LoginScreen(vm: AppViewModel, activity: ComponentActivity, nav: NavControlle
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        Image(
+            painter = painterResource(id = R.drawable.ic_logo),
+            contentDescription = "Colloquia logo",
+            modifier = Modifier.size(88.dp),
+        )
+        Spacer(Modifier.height(16.dp))
         Text("Colloquia", style = MaterialTheme.typography.headlineLarge)
-        Text("Record. Transcribe. Understand.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+        Text(
+            "Record. Transcribe. Understand.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Spacer(Modifier.height(28.dp))
 
         OutlinedTextField(
