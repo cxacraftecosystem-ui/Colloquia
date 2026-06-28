@@ -33,9 +33,9 @@ android {
         versionCode = appVersionCode
         versionName = appVersionName
 
-        // Default to the deployed (Colloquia) backend so release/device builds work out of the box.
-        // Override for the emulator in local.properties (apiBaseUrl=http://10.0.2.2:8010/api/).
-        val apiBaseUrl = localProperties.getProperty("apiBaseUrl", "http://13.127.140.238/api/")
+        // Default to the deployed backend via CloudFront (HTTPS + IPv6, so it connects on IPv6-only
+        // mobile networks). Override for the emulator in local.properties (http://10.0.2.2:8010/api/).
+        val apiBaseUrl = localProperties.getProperty("apiBaseUrl", "https://d2nrls693zgomu.cloudfront.net/api/")
         buildConfigField("String", "DEFAULT_API_BASE_URL", "\"$apiBaseUrl\"")
         // Same Google OAuth web client id as the field-repo (Credential Manager serverClientId).
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"614092441670-3e5k15srupq9mfpg3aktqfkjvkavu0g3.apps.googleusercontent.com\"")

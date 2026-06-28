@@ -12,3 +12,8 @@ output "ssh_command" {
   description = "Convenience SSH command."
   value       = "ssh -i ${local_sensitive_file.deploy_pem.filename} ubuntu@${aws_eip.api.public_ip}"
 }
+
+output "cloudfront_domain" {
+  description = "HTTPS + IPv6 API domain. Point the app at https://<this>/api/."
+  value       = aws_cloudfront_distribution.api.domain_name
+}

@@ -124,3 +124,60 @@ resource "aws_eip" "api" {
   domain   = "vpc"
   tags     = { Name = "${var.project}-api" }
 }
+
+########################### CloudFront (HTTPS + IPv6) #########################
+# Fronts the HTTP-only EC2 origin with HTTPS on a *.cloudfront.net domain and a
+# native IPv6 (AAAA) record — so the app connects on IPv6-only mobile networks
+# (Jio/Airtel) where the IPv4-only origin fails, and clears any mixed-content block.
+# CloudFront needs a DOMAIN origin (not a bare IP), so we use the EIP's AWS hostname.
+
+locals {
+  origin_domain = "ec2-${replace(aws_eip.api.public_ip, ".", "-")}.${var.aws_region}.compute.amazonaws.com"
+}
+
+resource "aws_cloudfront_distribution" "api" {
+  enabled         = true
+  is_ipv6_enabled = true
+  comment         = "${var.project} API"
+  price_class     = "PriceClass_100" # cheapest: NA + EU edges
+
+  origin {
+    domain_name = local.origin_domain
+    origin_id   = "ec2-api"
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only" # origin has no TLS cert; CloudFront terminates HTTPS
+      origin_ssl_protocols   = ["TLSv1.2"]
+      origin_read_timeout    = 60
+    }
+  }
+
+  default_cache_behavior {
+    target_origin_id       = "ec2-api"
+    viewer_protocol_policy  = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    # It's an API: forward everything, cache nothing.
+    forwarded_values {
+      query_string = true
+      headers      = ["*"]
+      cookies { forward = "all" }
+    }
+    min_ttl     = 0
+    default_ttl = 0
+    max_ttl     = 0
+  }
+
+  restrictions {
+    geo_restriction { restriction_type = "none" }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+
+  tags = { Name = "${var.project}-api", Project = var.project }
+}
