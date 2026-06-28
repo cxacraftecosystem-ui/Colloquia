@@ -50,10 +50,13 @@ jobs:
           BACKEND_ENV: ${{ secrets.BACKEND_ENV }}
 
       - name: Write FCM service-account JSON on the server (for push, HTTP v1)
-        if: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON != '' }}
         run: |
-          printf '%s' "$FCM_JSON" | ssh ubuntu@${{ secrets.EC2_HOST }} \
-            'cat > /home/ubuntu/app/backend/fcm-service-account.json && chmod 600 /home/ubuntu/app/backend/fcm-service-account.json'
+          if [ -n "$FCM_JSON" ]; then
+            printf '%s' "$FCM_JSON" | ssh ubuntu@${{ secrets.EC2_HOST }} \
+              'cat > /home/ubuntu/app/backend/fcm-service-account.json && chmod 600 /home/ubuntu/app/backend/fcm-service-account.json'
+          else
+            echo "No FCM_SERVICE_ACCOUNT_JSON secret; skipping push setup."
+          fi
         env:
           FCM_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
 
