@@ -84,6 +84,8 @@ dependencies {
     implementation("androidx.credentials:credentials:1.6.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.6.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.2.0")
+    // Google Workspace authorization (Calendar / Tasks access token, separate from sign-in).
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
 
     // Background upload + processing-status polling.
     implementation("androidx.work:work-runtime-ktx:2.9.1")

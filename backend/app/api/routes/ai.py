@@ -54,7 +54,7 @@ async def _transcript_text(recording_id: str) -> str:
     transcript = await db.transcript.find_unique(where={"recordingId": recording_id})
     if not transcript:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No transcript available yet")
-    return transcript.refinedText or transcript.rawText or ""
+    return transcript.translatedText or transcript.refinedText or transcript.rawText or ""
 
 
 # --------------------------------------------------------------------------- summaries

@@ -4,6 +4,9 @@ import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,11 +29,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.transcriptai.app.AppViewModel
+import com.transcriptai.app.R
+import com.transcriptai.app.data.GoogleActionRequest
+import com.transcriptai.app.data.GoogleWorkspaceAuth
 import com.transcriptai.app.data.RecordingDto
 import com.transcriptai.app.data.SegmentDto
 import kotlinx.coroutines.launch
@@ -117,9 +124,11 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
                 "Transcript" to Icons.AutoMirrored.Filled.Subject,
                 "Summary" to Icons.Default.Summarize,
                 "Actions" to Icons.Default.Checklist,
+                "Conversation" to Icons.AutoMirrored.Filled.Article,
                 "Chat" to Icons.Default.Forum,
             )
-            TabRow(selectedTabIndex = tab) {
+            // Scrollable so five icon+label tabs never wrap (they scroll horizontally if too wide).
+            ScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
                 tabs.forEachIndexed { i, (label, icon) ->
                     Tab(
                         selected = tab == i,
@@ -136,7 +145,8 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
                 0 -> TranscriptTab(vm, rec, player, audioUrl)
                 1 -> SummaryTab(vm, rec)
                 2 -> ActionsTab(vm, rec)
-                3 -> ChatTab(vm, rec)
+                3 -> ConversationTab(vm, rec)
+                4 -> ChatTab(vm, rec)
             }
         }
     }
@@ -251,7 +261,7 @@ private fun SummaryTab(vm: AppViewModel, rec: RecordingDto) {
         ScrollableTabRowChips(types, selected) { selected = it }
         Spacer(Modifier.height(12.dp))
         if (summary != null && summary.content.isNotBlank()) {
-            Text(summary.content)
+            MarkdownText(summary.content, Modifier.fillMaxWidth())
         } else {
             Text("No ${selected.lowercase()} summary yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -268,9 +278,71 @@ private fun SummaryTab(vm: AppViewModel, rec: RecordingDto) {
 @Composable
 private fun ActionsTab(vm: AppViewModel, rec: RecordingDto) {
     val grouped = rec.actionItems.groupBy { it.kind }
+    val context = LocalContext.current
+    val activity = context as? ComponentActivity
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var statusMsg by remember { mutableStateOf<String?>(null) }
+    var pending by remember { mutableStateOf("CALENDAR") }
+
+    fun pushWith(token: String?, kind: String) {
+        if (token.isNullOrBlank()) { statusMsg = "Google access wasn't granted."; busy = false; return }
+        val where = if (kind == "CALENDAR") "Calendar" else "Tasks"
+        scope.launch {
+            try {
+                val res = if (kind == "CALENDAR") vm.repo.api.googleCalendar(rec.id, GoogleActionRequest(token))
+                          else vm.repo.api.googleTasks(rec.id, GoogleActionRequest(token))
+                statusMsg = when (res.status.uppercase()) {
+                    "DONE" -> "Added ${res.created.size} item(s) to Google $where."
+                    "NEEDS_AUTH" -> "Google access is required."
+                    else -> "Couldn't add to Google $where."
+                }
+            } catch (e: Exception) {
+                statusMsg = e.message ?: "Failed to reach Google $where."
+            } finally { busy = false }
+        }
+    }
+
+    val authLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        val token = activity?.let { GoogleWorkspaceAuth.tokenFromResult(it, result.data) }
+        pushWith(token, pending)
+    }
+
+    fun start(kind: String) {
+        val act = activity ?: run { statusMsg = "Not available here."; return }
+        busy = true; statusMsg = null; pending = kind
+        GoogleWorkspaceAuth.authorize(
+            act, authLauncher,
+            onToken = { token -> pushWith(token, kind) },
+            onError = { msg -> busy = false; statusMsg = msg },
+        )
+    }
+
     LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
         if (rec.actionItems.isEmpty()) {
             item { Text("No action items extracted yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        } else {
+            item {
+                Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                    Text("SEND TO GOOGLE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    Row {
+                        FilledTonalButton(onClick = { start("CALENDAR") }, enabled = !busy) {
+                            Icon(painterResource(R.drawable.ic_google_calendar), null, tint = androidx.compose.ui.graphics.Color.Unspecified, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp)); Text("Calendar")
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        FilledTonalButton(onClick = { start("TASKS") }, enabled = !busy) {
+                            Icon(painterResource(R.drawable.ic_google_tasks), null, tint = androidx.compose.ui.graphics.Color.Unspecified, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp)); Text("Tasks")
+                        }
+                    }
+                    if (busy) { Spacer(Modifier.height(6.dp)); LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                    statusMsg?.let { Spacer(Modifier.height(6.dp)); Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                }
+            }
         }
         listOf("ACTION", "DECISION", "TAKEAWAY", "DEADLINE").forEach { kind ->
             val items = grouped[kind].orEmpty()
@@ -294,6 +366,59 @@ private fun ActionsTab(vm: AppViewModel, rec: RecordingDto) {
         }
         item { Spacer(Modifier.height(40.dp)) }
     }
+}
+
+@Composable
+private fun ConversationTab(vm: AppViewModel, rec: RecordingDto) {
+    val context = LocalContext.current
+    val refined = rec.transcript?.refinedText
+    val translated = rec.transcript?.translatedText
+    if (refined.isNullOrBlank() && translated.isNullOrBlank()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                when (rec.transcriptStatus.uppercase()) {
+                    "COMPLETED" -> "No refined conversation available for this recording."
+                    "FAILED" -> "Transcription failed. Try Re-transcribe."
+                    else -> "The refined conversation appears once transcription finishes."
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
+        if (!refined.isNullOrBlank()) {
+            ConversationSection(
+                title = "Refined",
+                subtitle = "Cleaned up, original language",
+                markdown = refined,
+                onCopy = { copyText(context, refined) },
+            )
+        }
+        if (!translated.isNullOrBlank()) {
+            Spacer(Modifier.height(20.dp))
+            ConversationSection(
+                title = "Refined + English",
+                subtitle = "Translated to English",
+                markdown = translated,
+                onCopy = { copyText(context, translated) },
+            )
+        }
+        Spacer(Modifier.height(40.dp))
+    }
+}
+
+@Composable
+private fun ConversationSection(title: String, subtitle: String?, markdown: String, onCopy: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            subtitle?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        IconButton(onClick = onCopy) { Icon(Icons.Default.ContentCopy, "Copy") }
+    }
+    Spacer(Modifier.height(4.dp))
+    MarkdownText(markdown, Modifier.fillMaxWidth())
 }
 
 @Composable

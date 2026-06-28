@@ -145,7 +145,11 @@ model Transcript {
   // PENDING | PROCESSING | COMPLETED | FAILED
   status      String    @default("PENDING")
   rawText     String?
+  // Cleaned, speaker-labelled dialogue in the ORIGINAL language (REFINED / REFINED_TRANSLATED modes).
   refinedText String?
+  // The refined dialogue translated to English (set in REFINED_TRANSLATED mode when the source isn't
+  // already English). Powers the "refined + translated" conversation view alongside refinedText.
+  translatedText String?
   language    String?
   model       String?
   durationMs  Int?

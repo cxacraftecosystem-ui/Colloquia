@@ -87,6 +87,13 @@ interface TranscriptApi {
     @GET("recordings/{id}/extracted")
     suspend fun listExtracted(@Path("id") id: String): List<ExtractedItemDto>
 
+    // ---- Google Workspace: push deadlines/action items to Calendar / Tasks ----
+    @POST("recordings/{id}/google/calendar")
+    suspend fun googleCalendar(@Path("id") id: String, @Body body: GoogleActionRequest): GoogleActionResult
+
+    @POST("recordings/{id}/google/tasks")
+    suspend fun googleTasks(@Path("id") id: String, @Body body: GoogleActionRequest): GoogleActionResult
+
     @GET("recordings/{id}/chat")
     suspend fun chatHistory(@Path("id") id: String): List<ChatMessageDto>
 

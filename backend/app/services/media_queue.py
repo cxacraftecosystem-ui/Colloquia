@@ -24,6 +24,7 @@ from app.services.ai import (
     refine_transcript_text,
     summarize,
     transcribe_audio_bytes,
+    translate_markdown_to_english,
 )
 from app.services.app_settings import (
     load_app_settings,
@@ -47,6 +48,14 @@ RATE_LIMIT_BASE_SECONDS = 30
 RATE_LIMIT_MAX_SECONDS = 900
 IDLE_LOAD_FACTOR = 0.6
 SUMMARY_TYPES = ["BRIEF", "DETAILED", "BULLETS", "MINUTES"]
+# Only ONE summary is generated automatically (keeps per-recording AI calls — and thus rate-limit
+# pressure — low). The other types are produced on demand from the Summary tab. The analysis job is
+# also made resumable (it skips work that already exists), so a mid-run 429 retries forward instead of
+# regenerating everything and re-burning the request budget.
+AUTO_SUMMARY_TYPES = ["BRIEF"]
+# A small gap between successive AI calls within a job, to avoid bursting past a tight per-minute quota.
+AI_CALL_PACING_SECONDS = 0.6
+ENGLISH_LANGUAGES = {"english", "en", "en-us", "en-gb"}
 
 # Single elected worker, so module-level cooldown state is safe.
 _rate_limit_cooldown_until: datetime | None = None
@@ -287,13 +296,23 @@ async def _store_transcript(recording: Any, result: dict[str, Any], settings: Se
     else:
         speakers = await assign_speakers_to_segments(segments, settings)
 
-    # Refinement mode: REFINED rewrites into clean speaker dialogue; REFINED_TRANSLATED also translates.
+    # Refinement: REFINED rewrites the raw text into a clean, speaker-labelled dialogue (original
+    # language). REFINED_TRANSLATED additionally produces an English translation of that dialogue —
+    # stored SEPARATELY so the app can show both the original-language and the English versions. The
+    # translation step is skipped when the source is already English (or detection is unknown English).
     mode = transcription_mode(await load_app_settings())
     refined_text: str | None = None
+    translated_text: str | None = None
     if raw_text and mode in {"REFINED", "REFINED_TRANSLATED"}:
-        refined = await refine_transcript_text(raw_text, mode == "REFINED_TRANSLATED", settings)
+        refined = await refine_transcript_text(raw_text, False, settings)
         if refined.get("status") == "COMPLETED":
             refined_text = refined.get("refined")
+        language = str(result.get("language") or "").strip().lower()
+        if mode == "REFINED_TRANSLATED" and refined_text and language not in ENGLISH_LANGUAGES:
+            await asyncio.sleep(AI_CALL_PACING_SECONDS)
+            translated = await translate_markdown_to_english(refined_text, settings)
+            if translated.get("status") == "COMPLETED":
+                translated_text = translated.get("translated")
 
     duration_ms = int(float(result.get("duration") or 0) * 1000) or (segments[-1]["endMs"] if segments else None)
     transcript = await db.transcript.upsert(
@@ -304,6 +323,7 @@ async def _store_transcript(recording: Any, result: dict[str, Any], settings: Se
                 "status": COMPLETED,
                 "rawText": raw_text,
                 "refinedText": refined_text,
+                "translatedText": translated_text,
                 "language": result.get("language"),
                 "model": settings.openai_transcription_model,
                 "durationMs": duration_ms,
@@ -312,6 +332,7 @@ async def _store_transcript(recording: Any, result: dict[str, Any], settings: Se
                 "status": COMPLETED,
                 "rawText": raw_text,
                 "refinedText": refined_text,
+                "translatedText": translated_text,
                 "language": result.get("language"),
                 "model": settings.openai_transcription_model,
                 "durationMs": duration_ms,
@@ -350,28 +371,42 @@ async def _store_transcript(recording: Any, result: dict[str, Any], settings: Se
 async def _run_analysis(job: Any, settings: Settings) -> None:
     recording = job.recording
     transcript = await db.transcript.find_unique(where={"recordingId": recording.id})
-    text = (transcript.refinedText or transcript.rawText or "") if transcript else ""
+    # Analyse the English text when available (translatedText) so summaries / action items come out in
+    # English; otherwise the refined dialogue, otherwise the raw transcript.
+    text = (
+        (transcript.translatedText or transcript.refinedText or transcript.rawText or "")
+        if transcript else ""
+    )
     if not text.strip():
         await _complete_job(job.id, {"status": EMPTY})
         return
 
     def _guard_rate_limit(res: dict[str, Any]) -> None:
-        # If an analysis sub-call is throttled, abort and let the queue back off + retry the WHOLE
-        # ANALYSIS job (so a 429 never leaves a recording with missing summaries/extractions).
+        # If an analysis sub-call is throttled, abort and let the queue back off + retry the ANALYSIS
+        # job. Because every step below is skipped when its output already exists, the retry RESUMES
+        # from where it stopped instead of re-running (and re-throttling) the whole pass.
         if str(res.get("status") or "").upper() == RATE_LIMITED:
             raise RateLimited(res.get("retryAfter"))
 
-    # AI title (and adopt as the display title when the user kept the default).
-    title_res = await generate_title(text, settings)
-    _guard_rate_limit(title_res)
-    if title_res.get("status") == COMPLETED and title_res.get("title"):
-        data = {"aiTitle": title_res["title"]}
-        if not recording.title or recording.title.lower().startswith(("recording", "new recording")):
-            data["title"] = title_res["title"]
-        await db.recording.update(where={"id": recording.id}, data=data)
+    # AI title (adopt as the display title when the user kept the default). Skip if already produced.
+    if not recording.aiTitle:
+        title_res = await generate_title(text, settings)
+        _guard_rate_limit(title_res)
+        if title_res.get("status") == COMPLETED and title_res.get("title"):
+            data = {"aiTitle": title_res["title"]}
+            if not recording.title or recording.title.lower().startswith(("recording", "new recording")):
+                data["title"] = title_res["title"]
+            await db.recording.update(where={"id": recording.id}, data=data)
 
-    # Summaries (one row per type, upserted).
-    for stype in SUMMARY_TYPES:
+    # Summaries: generate ONLY the default type automatically; skip any that already exist. The rest
+    # (DETAILED / BULLETS / MINUTES) are produced on demand from the app.
+    for stype in AUTO_SUMMARY_TYPES:
+        existing = await db.summary.find_unique(
+            where={"recordingId_type": {"recordingId": recording.id, "type": stype}}
+        )
+        if existing and (existing.content or "").strip():
+            continue
+        await asyncio.sleep(AI_CALL_PACING_SECONDS)
         res = await summarize(text, stype, settings)
         _guard_rate_limit(res)
         if res.get("status") == COMPLETED and res.get("content"):
@@ -383,11 +418,18 @@ async def _run_analysis(job: Any, settings: Settings) -> None:
                 },
             )
 
-    # Action items / decisions / takeaways / deadlines + entities / keywords / topics.
-    ext = await extract_items(text, settings)
-    _guard_rate_limit(ext)
-    if ext.get("status") == COMPLETED and isinstance(ext.get("data"), dict):
-        await _store_extractions(recording.id, ext["data"])
+    # Action items / decisions / takeaways / deadlines + entities / keywords / topics. Skip when this
+    # recording already has extractions (so a resumed job doesn't re-run the extraction call).
+    already_extracted = (
+        await db.actionitem.count(where={"recordingId": recording.id})
+        + await db.extracteditem.count(where={"recordingId": recording.id})
+    )
+    if not already_extracted:
+        await asyncio.sleep(AI_CALL_PACING_SECONDS)
+        ext = await extract_items(text, settings)
+        _guard_rate_limit(ext)
+        if ext.get("status") == COMPLETED and isinstance(ext.get("data"), dict):
+            await _store_extractions(recording.id, ext["data"])
 
     # Phase 2 post-analysis hooks (best-effort; never fail the job):
     # 1) index segments for semantic / cross-transcript search (skipped in lite mode),

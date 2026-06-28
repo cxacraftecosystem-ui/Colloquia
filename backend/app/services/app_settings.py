@@ -11,7 +11,9 @@ from zoneinfo import ZoneInfo
 from app.core.db import db
 
 SINGLETON_ID = "singleton"
-DEFAULT_TRANSCRIPTION_MODE = "REFINED"
+# Default: clean up the dialogue AND translate it to English when the source isn't English. The
+# untranslated refined version is kept too (see Transcript.refinedText vs translatedText).
+DEFAULT_TRANSCRIPTION_MODE = "REFINED_TRANSLATED"
 VALID_TRANSCRIPTION_MODES = {"RAW", "REFINED", "REFINED_TRANSLATED"}
 DEFAULT_TIMEZONE = "Asia/Kolkata"
 

@@ -11,13 +11,32 @@ import json
 import logging
 import random
 import time
+from datetime import datetime
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 import requests
 
 from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
+
+
+def now_context(settings: Settings | None = None) -> str:
+    """A human-readable 'current date/time' line injected into AI prompts so the model can resolve
+    relative expressions like 'next week', 'the 26th', 'this year', or 'half an hour later' into
+    concrete dates. Uses the app timezone so due dates match the user's calendar."""
+    tz_name = getattr(settings, "app_timezone", None) or "Asia/Kolkata"
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:  # noqa: BLE001
+        tz = ZoneInfo("Asia/Kolkata")
+    now = datetime.now(tz)
+    return (
+        f"For reference, the current date and time is {now:%A, %d %B %Y, %H:%M} ({tz_name}). "
+        f"Resolve any relative dates/times (e.g. 'tomorrow', 'next week', 'the 26th', 'this year', "
+        f"'in half an hour') against this, and express resulting dates as ISO-8601."
+    )
 
 # Whisper rejects files at/over 25 MB. Stay under it and split anything larger into ~10-minute mono
 # segments transcribed sequentially, stitched with their timestamps offset by the chunk start.
@@ -35,9 +54,12 @@ _ANALYSIS_MAX_CHARS = 48_000
 # Sustained throttling still surfaces (so the durable queue can back off and the synchronous routes
 # can return a clean 429), but short spikes are absorbed silently here.
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
-_MAX_HTTP_RETRIES = 4
-_BACKOFF_BASE_SECONDS = 1.5
-_BACKOFF_CAP_SECONDS = 30.0
+# Low OpenAI tiers throttle aggressively (a single clip can fan out into several chat calls). Retry
+# more times and wait longer so a tight requests-per-minute budget is absorbed here rather than
+# surfacing to the user / requeueing the whole job.
+_MAX_HTTP_RETRIES = 6
+_BACKOFF_BASE_SECONDS = 2.0
+_BACKOFF_CAP_SECONDS = 60.0
 
 
 def retry_after_seconds(response: requests.Response | None) -> float | None:
@@ -395,6 +417,36 @@ async def refine_transcript_text(
         return _failed_result(exc, refined=None)
 
 
+async def translate_markdown_to_english(refined_markdown: str | None, settings: Settings) -> dict[str, Any]:
+    """Translate an already-refined Markdown dialogue into natural English, preserving the Markdown
+    structure (bold `**Speaker N:**` labels, line breaks, `---` rules). Used to produce the
+    'refined + translated' view alongside the original-language refined view."""
+    if not settings.openai_api_key:
+        return _unavailable("translated")
+    if not refined_markdown or not refined_markdown.strip():
+        return {"available": True, "status": "EMPTY", "translated": None}
+    clipped = refined_markdown.strip()[:_REFINE_MAX_CHARS]
+    system = (
+        "You are an expert translator. Translate the user's Markdown conversation into clear, natural "
+        "English. Preserve the Markdown structure EXACTLY: keep the bold speaker labels (e.g. "
+        "`**Speaker 1:**`), keep each turn on its own line, and keep any `---` rules. Translate only "
+        "the spoken content; never add, remove, or reorder turns. If a passage is already English, "
+        "leave it as-is."
+    )
+    try:
+        translated = await _chat(
+            [{"role": "system", "content": system}, {"role": "user", "content": clipped}], settings
+        )
+        return {
+            "available": True,
+            "status": "COMPLETED" if translated else "EMPTY",
+            "translated": translated,
+            "model": settings.openai_chat_model,
+        }
+    except requests.RequestException as exc:
+        return _failed_result(exc, translated=None)
+
+
 async def assign_speakers_to_segments(
     segments: list[dict[str, Any]], settings: Settings
 ) -> list[str | None]:
@@ -467,7 +519,7 @@ async def summarize(transcript: str, summary_type: str, settings: Settings) -> d
     try:
         content = await _chat(
             [
-                {"role": "system", "content": "You are a precise meeting/audio summarizer. Be faithful; never invent facts."},
+                {"role": "system", "content": "You are a precise meeting/audio summarizer. Be faithful; never invent facts. " + now_context(settings)},
                 {"role": "user", "content": f"{instruction}\n\nTranscript:\n\n{clipped}"},
             ],
             settings,
@@ -486,7 +538,8 @@ async def extract_items(transcript: str, settings: Settings) -> dict[str, Any]:
     if not clipped:
         return {"available": True, "status": "EMPTY", "data": None}
     system = (
-        "You extract structured information from a transcript. Reply with JSON only, using this shape:\n"
+        "You extract structured information from a transcript. " + now_context(settings) + "\n"
+        "Reply with JSON only, using this shape:\n"
         "{\n"
         '  "actionItems": [{"text": str, "assignee": str|null, "dueDate": str|null}],\n'
         '  "decisions": [str],\n'
@@ -494,8 +547,9 @@ async def extract_items(transcript: str, settings: Settings) -> dict[str, Any]:
         '  "deadlines": [{"text": str, "dueDate": str|null}],\n'
         '  "entities": [str], "keywords": [str], "topics": [str]\n'
         "}\n"
-        "dueDate is ISO-8601 (YYYY-MM-DD) when a date is clearly stated, else null. Be faithful; "
-        "omit anything not actually present."
+        "dueDate is full ISO-8601 (YYYY-MM-DD, include time as YYYY-MM-DDTHH:MM when a time is given) "
+        "whenever a date/time is stated OR can be resolved from a relative expression against the "
+        "current date above; else null. Be faithful; omit anything not actually present."
     )
     try:
         raw = await _chat(
@@ -520,7 +574,8 @@ async def chat_over_transcript(
             "role": "system",
             "content": (
                 "You answer questions about the following transcript. Use only what it contains; if "
-                "the answer isn't present, say so.\n\nTranscript:\n\n" + clipped
+                "the answer isn't present, say so. " + now_context(settings)
+                + "\n\nTranscript:\n\n" + clipped
             ),
         },
         *history,
@@ -545,7 +600,7 @@ async def transform_text(
     try:
         result = await _chat(
             [
-                {"role": "system", "content": "You transform transcript text exactly as instructed, staying faithful to its meaning."},
+                {"role": "system", "content": "You transform transcript text exactly as instructed, staying faithful to its meaning. " + now_context(settings)},
                 {"role": "user", "content": f"{instruction}\n\nTranscript:\n\n{clipped}"},
             ],
             settings,

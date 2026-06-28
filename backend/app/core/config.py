@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_transcription_model: str = Field(default="whisper-1", alias="OPENAI_TRANSCRIPTION_MODEL")
     openai_chat_model: str = Field(default="gpt-4o-mini", alias="OPENAI_CHAT_MODEL")
+    # Timezone used to give the AI a concrete "now" so it can resolve relative dates ("next week",
+    # "the 26th") into ISO dates that land correctly on the user's calendar.
+    app_timezone: str = Field(default="Asia/Kolkata", alias="APP_TIMEZONE")
 
     media_queue_worker_enabled: bool = Field(default=True, alias="MEDIA_QUEUE_WORKER_ENABLED")
     media_queue_interval_seconds: float = Field(default=5.0, alias="MEDIA_QUEUE_INTERVAL_SECONDS")

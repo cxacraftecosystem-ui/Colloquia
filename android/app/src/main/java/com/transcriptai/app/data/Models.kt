@@ -75,7 +75,7 @@ data class AppReleasePublish(
 // ---- Settings ----
 @Serializable
 data class AppSettingsDto(
-    val transcriptionMode: String = "REFINED",
+    val transcriptionMode: String = "REFINED_TRANSLATED",
     val defaultLanguage: String? = null,
 )
 
@@ -103,6 +103,8 @@ data class TranscriptDto(
     val status: String = "PENDING",
     val rawText: String? = null,
     val refinedText: String? = null,
+    // Refined dialogue translated to English (set when the source wasn't already English).
+    val translatedText: String? = null,
     val language: String? = null,
     val durationMs: Int? = null,
     val segments: List<SegmentDto> = emptyList(),
@@ -285,3 +287,17 @@ data class KnowledgeQuery(val query: String)
 
 @Serializable
 data class VoiceCommand(val command: String)
+
+// ---- Google Workspace push (Calendar / Tasks) ----
+@Serializable
+data class GoogleActionRequest(
+    val googleAccessToken: String? = null,
+    val to: String? = null,
+)
+
+@Serializable
+data class GoogleActionResult(
+    val status: String = "NEEDS_AUTH",
+    val scope: String? = null,
+    val created: List<JsonObject> = emptyList(),
+)
