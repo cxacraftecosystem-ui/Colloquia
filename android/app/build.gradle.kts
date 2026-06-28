@@ -15,7 +15,7 @@ val localProperties = Properties().apply {
     }
 }
 
-val appVersionName = "1.0.0"
+val appVersionName = "0.0.1"
 val appVersionCode = appVersionName.split(".").let { parts ->
     val major = parts.getOrNull(0)?.toIntOrNull() ?: 0
     val minor = parts.getOrNull(1)?.toIntOrNull() ?: 0

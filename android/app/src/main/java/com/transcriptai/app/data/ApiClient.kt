@@ -3,6 +3,7 @@ package com.transcriptai.app.data
 import com.transcriptai.app.BuildConfig
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.serialization.json.Json
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -11,6 +12,11 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 object ApiClient {
+    // Our backend host (CloudFront/EC2). The bearer token is attached ONLY to requests for this host.
+    // Crucial: a presigned S3 PUT must NOT carry an Authorization header — S3 then tries to authenticate
+    // it as SigV4 and rejects with HTTP 400, which previously made every upload fail and fall back to
+    // the offline outbox ("will upload when online").
+    private val backendHost: String? = BuildConfig.DEFAULT_API_BASE_URL.toHttpUrlOrNull()?.host
     // Gateway timeouts that mean "origin was too slow", not "request was bad" — worth a quick retry.
     private val RETRIABLE_GATEWAY_CODES = setOf(502, 503, 504)
     private const val MAX_GATEWAY_ATTEMPTS = 4
@@ -66,8 +72,9 @@ object ApiClient {
             }
             .addInterceptor { chain ->
                 val token = tokenStore.getToken()
-                val request = if (token.isNullOrBlank()) {
-                    chain.request()
+                val isBackend = chain.request().url.host == backendHost
+                val request = if (token.isNullOrBlank() || !isBackend) {
+                    chain.request() // never send our JWT to S3 / third-party hosts
                 } else {
                     chain.request().newBuilder().header("Authorization", "Bearer $token").build()
                 }

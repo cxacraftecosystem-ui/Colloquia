@@ -1,6 +1,7 @@
 package com.transcriptai.app.data
 
 import android.content.Context
+import android.net.Uri
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -18,6 +19,7 @@ class Repository(context: Context) {
     val api: TranscriptApi = ApiClient.create(tokenStore)
     private val http: OkHttpClient = ApiClient.okHttp(tokenStore)
     private val outbox = Outbox(appContext)
+    val prefs = Prefs(appContext)
 
     val isLoggedIn: Boolean get() = !tokenStore.getToken().isNullOrBlank()
     fun cachedUser(): UserDto? = tokenStore.getUser()
@@ -43,9 +45,15 @@ class Repository(context: Context) {
     /** Upload a recorded file. On any network error the recording is queued to the outbox and the
      *  caller is told it's pending (so nothing is lost offline). Returns the created recording or null
      *  if queued. */
-    suspend fun uploadRecording(file: File, durationSec: Int, title: String, transcribe: Boolean = true): RecordingDto? {
+    suspend fun uploadRecording(
+        file: File,
+        durationSec: Int,
+        title: String,
+        transcribe: Boolean = true,
+        mimeType: String = "audio/m4a",
+    ): RecordingDto? {
         return try {
-            doUpload(file, durationSec, title, transcribe)
+            doUpload(file, durationSec, title, transcribe, mimeType)
         } catch (e: Exception) {
             outbox.add(
                 PendingUpload(
@@ -53,14 +61,14 @@ class Repository(context: Context) {
                     filePath = file.absolutePath,
                     title = title,
                     durationSec = durationSec,
+                    mimeType = mimeType,
                 )
             )
             null
         }
     }
 
-    private suspend fun doUpload(file: File, durationSec: Int, title: String, transcribe: Boolean): RecordingDto {
-        val mime = "audio/m4a"
+    private suspend fun doUpload(file: File, durationSec: Int, title: String, transcribe: Boolean, mime: String = "audio/m4a"): RecordingDto {
         val presign = api.presign(PresignRequest(filename = file.name, mimeType = mime, sizeBytes = file.length()))
         // Stream the bytes straight to S3 with the presigned PUT (never through the backend).
         val body = file.asRequestBody(mime.toMediaTypeOrNull())
@@ -97,7 +105,7 @@ class Repository(context: Context) {
                 continue
             }
             try {
-                doUpload(file, item.durationSec, item.title, transcribe = true)
+                doUpload(file, item.durationSec, item.title, transcribe = true, mime = item.mimeType)
                 outbox.remove(item.localId)
                 done++
             } catch (_: Exception) {
@@ -119,4 +127,63 @@ class Repository(context: Context) {
             return resp.body?.bytes() ?: ByteArray(0)
         }
     }
+
+    // ---------------------------------------------------------------- file import
+
+    /** Copy a picked content:// Uri into a cache file we can stream to S3. */
+    fun copyUriToCache(uri: Uri, suggestedName: String): File {
+        val dir = File(appContext.cacheDir, "imports").apply { mkdirs() }
+        val safe = suggestedName.replace(Regex("[^A-Za-z0-9._-]+"), "_").ifBlank { "import.bin" }
+        val out = File(dir, "${UUID.randomUUID().toString().take(8)}_$safe")
+        appContext.contentResolver.openInputStream(uri).use { input ->
+            requireNotNull(input) { "Cannot open file" }
+            out.outputStream().use { input.copyTo(it) }
+        }
+        return out
+    }
+
+    // ---------------------------------------------------------------- OTA "push update to all"
+
+    suspend fun checkLatestRelease(): AppReleaseDto = api.latestRelease()
+
+    /** Master-admin: upload THIS device's installed APK and publish it as the latest release so every
+     *  other device can self-update. Returns the published release. */
+    suspend fun publishOwnApk(versionCode: Int, versionName: String, notes: String?): AppReleaseDto {
+        val apk = File(appContext.applicationInfo.sourceDir)
+        val name = "colloquia-$versionName-$versionCode.apk"
+        val mime = "application/vnd.android.package-archive"
+        val presign = api.presign(PresignRequest(filename = name, mimeType = mime, sizeBytes = apk.length()))
+        val body = apk.asRequestBody(mime.toMediaTypeOrNull())
+        val putReq = Request.Builder().url(presign.uploadUrl).put(body).header("Content-Type", mime).build()
+        http.newCall(putReq).execute().use { resp ->
+            if (!resp.isSuccessful) throw RuntimeException("APK upload failed: HTTP ${resp.code}")
+        }
+        return api.publishRelease(
+            AppReleasePublish(
+                versionCode = versionCode,
+                versionName = versionName,
+                objectKey = presign.objectKey,
+                url = presign.publicUrl,
+                notes = notes,
+            )
+        )
+    }
+
+    /** Download an APK (from the presigned URL) to a cache file for installation. */
+    suspend fun downloadApk(url: String): File {
+        val dir = File(appContext.cacheDir, "updates").apply { mkdirs() }
+        val out = File(dir, "colloquia-update.apk")
+        val req = Request.Builder().url(url).get().build()
+        http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw RuntimeException("Update download failed: HTTP ${resp.code}")
+            resp.body?.byteStream()?.use { input -> out.outputStream().use { input.copyTo(it) } }
+                ?: throw RuntimeException("Empty download")
+        }
+        return out
+    }
+
+    // ---------------------------------------------------------------- settings
+
+    suspend fun appSettings(): AppSettingsDto = api.getAppSettings()
+    suspend fun updateAppSettings(body: AppSettingsUpdate): AppSettingsDto = api.updateAppSettings(body)
 }

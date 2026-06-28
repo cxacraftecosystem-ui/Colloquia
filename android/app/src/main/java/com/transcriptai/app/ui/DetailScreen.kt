@@ -80,7 +80,7 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 StatusChip(rec.transcriptStatus)
                 Spacer(Modifier.width(8.dp))
-                Text(fmtDuration(rec.durationSec), color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodySmall)
+                Text(fmtDuration(rec.durationSec), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
             TabRow(selectedTabIndex = tab) {
                 listOf("Transcript", "Summary", "Actions", "Chat").forEachIndexed { i, label ->
@@ -132,7 +132,7 @@ private fun TranscriptTab(vm: AppViewModel, rec: RecordingDto) {
                             "FAILED" -> "Transcription failed. Try Re-transcribe."
                             "UNAVAILABLE" -> "Transcription is unavailable (no API key)."
                             else -> "Transcribing… pull to refresh shortly."
-                        }, color = MaterialTheme.colorScheme.outline,
+                        }, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             } else {
@@ -184,7 +184,7 @@ private fun SummaryTab(vm: AppViewModel, rec: RecordingDto) {
         if (summary != null) {
             Text(summary.content)
         } else {
-            Text("No ${selected.lowercase()} summary yet.", color = MaterialTheme.colorScheme.outline)
+            Text("No ${selected.lowercase()} summary yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(16.dp))
         Row {
@@ -201,7 +201,7 @@ private fun ActionsTab(vm: AppViewModel, rec: RecordingDto) {
     val grouped = rec.actionItems.groupBy { it.kind }
     LazyColumn(Modifier.fillMaxSize().padding(16.dp)) {
         if (rec.actionItems.isEmpty()) {
-            item { Text("No action items extracted yet.", color = MaterialTheme.colorScheme.outline) }
+            item { Text("No action items extracted yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         listOf("ACTION", "DECISION", "TAKEAWAY", "DEADLINE").forEach { kind ->
             val items = grouped[kind].orEmpty()
@@ -212,12 +212,12 @@ private fun ActionsTab(vm: AppViewModel, rec: RecordingDto) {
                         if (kind == "ACTION") {
                             Checkbox(checked = ai.done, onCheckedChange = { vm.toggleActionItem(rec.id, ai.id) })
                         } else {
-                            Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.outline)
+                            Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Column(Modifier.padding(vertical = 4.dp)) {
                             Text(ai.text)
                             val meta = listOfNotNull(ai.assignee, ai.dueDate).joinToString(" • ")
-                            if (meta.isNotBlank()) Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            if (meta.isNotBlank()) Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }

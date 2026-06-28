@@ -38,17 +38,25 @@ object RecorderController {
         if (_state.value == RecState.RECORDING) recorder?.maxAmplitude ?: 0 else 0
     }.getOrDefault(0)
 
-    fun start(context: Context): File {
+    fun start(context: Context, noiseCancellation: Boolean = true, highQuality: Boolean = true): File {
         if (isActive) return outputFile!!
         val dir = File(context.filesDir, "recordings").apply { mkdirs() }
         val file = File(dir, "rec_${UUID.randomUUID().hex()}.m4a")
         val rec = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else @Suppress("DEPRECATION") MediaRecorder()
         rec.apply {
-            setAudioSource(MediaRecorder.AudioSource.MIC)
+            // VOICE_RECOGNITION routes capture through the platform's voice pre-processing (noise
+            // suppression / AGC) — cleaner audio + better transcription accuracy than raw MIC. Falls
+            // back to MIC if the device doesn't support it. MIC = no processing (when NC is off).
+            if (noiseCancellation) {
+                runCatching { setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION) }
+                    .onFailure { setAudioSource(MediaRecorder.AudioSource.MIC) }
+            } else {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+            }
             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setAudioEncodingBitRate(128_000)
-            setAudioSamplingRate(44_100)
+            setAudioEncodingBitRate(if (highQuality) 128_000 else 64_000)
+            setAudioSamplingRate(if (highQuality) 44_100 else 22_050)
             setOutputFile(file.absolutePath)
             prepare()
             start()
@@ -91,6 +99,20 @@ object RecorderController {
         accumulatedMs = 0L
         _elapsedMs.value = 0L
         return if (file != null && file.exists()) file to (durationMs / 1000).toInt() else null
+    }
+
+    /** Stop and throw away the recording (no upload). Deletes the partial file. */
+    fun discard() {
+        val rec = recorder
+        val file = outputFile
+        runCatching { rec?.stop() }
+        runCatching { rec?.release() }
+        runCatching { file?.delete() }
+        recorder = null
+        outputFile = null
+        _state.value = RecState.IDLE
+        accumulatedMs = 0L
+        _elapsedMs.value = 0L
     }
 
     fun tick() {

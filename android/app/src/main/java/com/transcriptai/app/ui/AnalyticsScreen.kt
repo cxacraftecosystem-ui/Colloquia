@@ -68,7 +68,7 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
     Surface(modifier = modifier, color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
         Column(Modifier.padding(16.dp)) {
             Text(value, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-            Text(label, color = MaterialTheme.colorScheme.outline)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

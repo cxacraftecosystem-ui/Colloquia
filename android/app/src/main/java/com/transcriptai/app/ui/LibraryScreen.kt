@@ -94,7 +94,7 @@ fun LibraryScreen(vm: AppViewModel, nav: NavController) {
                 Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             } else if (vm.recordings.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No recordings yet. Tap Record to start.", color = MaterialTheme.colorScheme.outline)
+                    Text("No recordings yet. Tap Record to start.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
@@ -125,20 +125,20 @@ private fun RecordingRow(rec: RecordingDto, onClick: () -> Unit, onFavorite: () 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusChip(rec.transcriptStatus)
                 Spacer(Modifier.width(8.dp))
-                Text(fmtDuration(rec.durationSec), color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodySmall)
+                Text(fmtDuration(rec.durationSec), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 rec.folder?.let {
                     Spacer(Modifier.width(8.dp))
-                    Text("• ${it.name}", color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodySmall)
+                    Text("• ${it.name}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
         IconButton(onClick = onPin) {
-            Icon(Icons.Default.PushPin, "Pin", tint = if (rec.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+            Icon(Icons.Default.PushPin, "Pin", tint = if (rec.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
         }
         IconButton(onClick = onFavorite) {
             Icon(
                 if (rec.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite",
-                tint = if (rec.isFavorite) Color(0xFFE0556B) else MaterialTheme.colorScheme.outline,
+                tint = if (rec.isFavorite) Color(0xFFE0556B) else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

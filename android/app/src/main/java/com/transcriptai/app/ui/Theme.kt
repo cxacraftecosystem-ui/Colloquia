@@ -9,11 +9,15 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.transcriptai.app.R
 
 // ElevenLabs-inspired palette (see DESIGN-elevenlabs.md): off-white editorial canvas, warm near-black
 // ink, no saturated CTA colour. The ink IS the primary. Pastel gradient tokens are decoration only.
@@ -78,22 +82,44 @@ private val AppShapes = Shapes(
     extraLarge = RoundedCornerShape(24.dp),
 )
 
-// Display = serif (Waldenburg substitute) at light weight; body/labels = sans (Inter substitute) with
-// the design's subtle +0.15px tracking. No font files shipped, so we approximate with system families.
-private val Display = FontFamily.Serif
-private val Sans = FontFamily.SansSerif
+// Design-adherent type (DESIGN-elevenlabs.md): EB Garamond (the documented Waldenburg-Light substitute)
+// for display serif, Inter for body/labels. Both are bundled as variable fonts; we pin the weight axis
+// per style. EB Garamond's wght axis starts at 400, so display sits at 400 (its lightest) — the
+// editorial signature. Body Inter carries the design's subtle +0.15px tracking.
+@OptIn(ExperimentalTextApi::class)
+private fun inter(weight: Int) = Font(
+    R.font.inter_variable,
+    weight = FontWeight(weight),
+    variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
+)
+
+@OptIn(ExperimentalTextApi::class)
+private fun garamond(weight: Int) = Font(
+    R.font.eb_garamond_variable,
+    weight = FontWeight(weight),
+    variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
+)
+
+private val Inter = FontFamily(inter(400), inter(500), inter(600), inter(700))
+private val Display = FontFamily(garamond(400), garamond(500), garamond(600))
+private val Sans = Inter
 
 private val AppTypography = Typography(
-    displaySmall = TextStyle(fontFamily = Display, fontWeight = FontWeight.Light, fontSize = 36.sp, letterSpacing = (-0.4).sp),
-    headlineLarge = TextStyle(fontFamily = Display, fontWeight = FontWeight.Light, fontSize = 32.sp, letterSpacing = (-0.3).sp),
-    headlineMedium = TextStyle(fontFamily = Display, fontWeight = FontWeight.Light, fontSize = 28.sp, letterSpacing = (-0.3).sp),
-    headlineSmall = TextStyle(fontFamily = Display, fontWeight = FontWeight.Light, fontSize = 24.sp),
-    titleLarge = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 20.sp),
-    titleMedium = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 18.sp, letterSpacing = 0.18.sp),
-    bodyLarge = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Normal, fontSize = 16.sp, letterSpacing = 0.16.sp),
-    bodyMedium = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Normal, fontSize = 15.sp, letterSpacing = 0.15.sp),
-    labelLarge = TextStyle(fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 15.sp),
-    labelSmall = TextStyle(fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 0.96.sp),
+    displayLarge = TextStyle(fontFamily = Display, fontWeight = FontWeight(400), fontSize = 44.sp, lineHeight = 48.sp, letterSpacing = (-0.8).sp),
+    displayMedium = TextStyle(fontFamily = Display, fontWeight = FontWeight(400), fontSize = 38.sp, lineHeight = 44.sp, letterSpacing = (-0.5).sp),
+    displaySmall = TextStyle(fontFamily = Display, fontWeight = FontWeight(400), fontSize = 32.sp, lineHeight = 38.sp, letterSpacing = (-0.4).sp),
+    headlineLarge = TextStyle(fontFamily = Display, fontWeight = FontWeight(400), fontSize = 30.sp, lineHeight = 36.sp, letterSpacing = (-0.3).sp),
+    headlineMedium = TextStyle(fontFamily = Display, fontWeight = FontWeight(400), fontSize = 26.sp, lineHeight = 32.sp, letterSpacing = (-0.3).sp),
+    headlineSmall = TextStyle(fontFamily = Display, fontWeight = FontWeight(500), fontSize = 22.sp, lineHeight = 28.sp),
+    titleLarge = TextStyle(fontFamily = Inter, fontWeight = FontWeight(600), fontSize = 20.sp, lineHeight = 27.sp),
+    titleMedium = TextStyle(fontFamily = Inter, fontWeight = FontWeight(600), fontSize = 17.sp, lineHeight = 24.sp, letterSpacing = 0.1.sp),
+    titleSmall = TextStyle(fontFamily = Inter, fontWeight = FontWeight(600), fontSize = 15.sp, lineHeight = 20.sp),
+    bodyLarge = TextStyle(fontFamily = Inter, fontWeight = FontWeight(400), fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = 0.15.sp),
+    bodyMedium = TextStyle(fontFamily = Inter, fontWeight = FontWeight(400), fontSize = 15.sp, lineHeight = 22.sp, letterSpacing = 0.15.sp),
+    bodySmall = TextStyle(fontFamily = Inter, fontWeight = FontWeight(400), fontSize = 13.sp, lineHeight = 18.sp, letterSpacing = 0.1.sp),
+    labelLarge = TextStyle(fontFamily = Inter, fontWeight = FontWeight(600), fontSize = 15.sp),
+    labelMedium = TextStyle(fontFamily = Inter, fontWeight = FontWeight(500), fontSize = 13.sp, letterSpacing = 0.4.sp),
+    labelSmall = TextStyle(fontFamily = Inter, fontWeight = FontWeight(600), fontSize = 12.sp, letterSpacing = 0.8.sp),
 )
 
 @Composable

@@ -1,12 +1,16 @@
 package com.transcriptai.app
 
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.transcriptai.app.data.*
+import com.transcriptai.app.recording.AudioExtract
 import com.transcriptai.app.recording.Notifications
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -59,8 +63,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var favoritesOnly by mutableStateOf(false)
     var activeFolderId by mutableStateOf<String?>(null)
 
-    // Settings
-    var darkMode by mutableStateOf<Boolean?>(null)
+    // Settings (device-local prefs + global transcription mode)
+    var darkMode by mutableStateOf(repo.prefs.darkMode)
+    var noiseCancellation by mutableStateOf(repo.prefs.noiseCancellation)
+        private set
+    var highQuality by mutableStateOf(repo.prefs.highQuality)
+        private set
+    var autoUpload by mutableStateOf(repo.prefs.autoUpload)
+        private set
+    var notifications by mutableStateOf(repo.prefs.notifications)
+        private set
+    var transcriptionMode by mutableStateOf("REFINED")
+        private set
+
+    val isMasterAdmin: Boolean get() = user?.role == "MASTER_ADMIN"
+
+    // OTA
+    var updateRelease by mutableStateOf<AppReleaseDto?>(null)   // non-null => a newer version exists
+    var updateBusy by mutableStateOf(false)
+    var publishingUpdate by mutableStateOf(false)
 
     private inline fun io(crossinline block: suspend () -> Unit) = viewModelScope.launch {
         try {
@@ -245,5 +266,87 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---------------------------------------------------------------- settings
     fun saveDarkMode(value: Boolean?) {
         darkMode = value
+        repo.prefs.darkMode = value
+    }
+
+    fun saveNoiseCancellation(v: Boolean) { noiseCancellation = v; repo.prefs.noiseCancellation = v }
+    fun saveHighQuality(v: Boolean) { highQuality = v; repo.prefs.highQuality = v }
+    fun saveAutoUpload(v: Boolean) { autoUpload = v; repo.prefs.autoUpload = v }
+    fun saveNotifications(v: Boolean) { notifications = v; repo.prefs.notifications = v }
+
+    fun loadAppSettings() = io { transcriptionMode = repo.appSettings().transcriptionMode }
+
+    fun chooseTranscriptionMode(mode: String) = io {
+        // Global (master-admin only); optimistic update with server confirmation.
+        transcriptionMode = mode
+        transcriptionMode = repo.updateAppSettings(AppSettingsUpdate(transcriptionMode = mode)).transcriptionMode
+    }
+
+    // ---------------------------------------------------------------- file import (audio / video)
+    /** Import a picked audio or video file. For video, the audio track is extracted on-device so only
+     *  the audio is uploaded & transcribed. */
+    fun importMedia(uri: Uri, displayName: String, isVideo: Boolean, title: String) = io {
+        loading = true
+        try {
+            val source = withContext(Dispatchers.IO) { repo.copyUriToCache(uri, displayName) }
+            val toUpload = if (isVideo) {
+                withContext(Dispatchers.IO) {
+                    AudioExtract.extractAudio(source, File(appCtx.cacheDir, "imports")).also { source.delete() }
+                }
+            } else source
+            val created = repo.uploadRecording(toUpload, durationSec = 0, title = title, mimeType = "audio/m4a")
+            pendingUploads = repo.pendingCount()
+            if (created != null) {
+                Notifications.notify(appCtx, toUpload.hashCode(), "Uploaded", "“$title” is transcribing…")
+                refreshRecordings()
+            } else {
+                Notifications.notify(appCtx, toUpload.hashCode(), "Saved offline", "“$title” will upload when online")
+            }
+        } catch (e: Exception) {
+            error = humanError(e, "Couldn't import that file.")
+        } finally { loading = false }
+    }
+
+    // ---------------------------------------------------------------- OTA "push update to all"
+    fun checkForUpdate(silent: Boolean = true) = io {
+        try {
+            val latest = repo.checkLatestRelease()
+            updateRelease = if (latest.versionCode > BuildConfig.VERSION_CODE && !latest.downloadUrl.isNullOrBlank()) latest else null
+        } catch (e: Exception) {
+            if (!silent) error = humanError(e, "Couldn't check for updates.")
+        }
+    }
+
+    fun downloadAndInstallUpdate() = io {
+        val rel = updateRelease ?: return@io
+        val url = rel.downloadUrl ?: rel.url ?: return@io
+        updateBusy = true
+        try {
+            val apk = withContext(Dispatchers.IO) { repo.downloadApk(url) }
+            installApk(apk)
+        } catch (e: Exception) {
+            error = humanError(e, "Update download failed.")
+        } finally { updateBusy = false }
+    }
+
+    private fun installApk(file: File) {
+        val uri = FileProvider.getUriForFile(appCtx, "${appCtx.packageName}.fileprovider", file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        appCtx.startActivity(intent)
+    }
+
+    /** Master-admin: publish THIS build to every device. */
+    fun pushUpdateToAll(notes: String?, onDone: (Boolean) -> Unit) = io {
+        publishingUpdate = true
+        try {
+            repo.publishOwnApk(BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME, notes)
+            onDone(true)
+        } catch (e: Exception) {
+            error = humanError(e, "Couldn't publish the update."); onDone(false)
+        } finally { publishingUpdate = false }
     }
 }

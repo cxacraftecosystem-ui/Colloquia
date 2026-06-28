@@ -159,4 +159,24 @@ interface TranscriptApi {
 
     @POST("devices")
     suspend fun registerDevice(@Body body: Map<String, String>): Map<String, kotlinx.serialization.json.JsonElement>
+
+    // ---- Settings (global transcription mode is master-admin; /me is per-user) ----
+    @GET("settings")
+    suspend fun getAppSettings(): AppSettingsDto
+
+    @PUT("settings")
+    suspend fun updateAppSettings(@Body body: AppSettingsUpdate): AppSettingsDto
+
+    @GET("settings/me")
+    suspend fun getMySettings(): Map<String, kotlinx.serialization.json.JsonElement>
+
+    @PUT("settings/me")
+    suspend fun updateMySettings(@Body body: Map<String, kotlinx.serialization.json.JsonElement>): Map<String, kotlinx.serialization.json.JsonElement>
+
+    // ---- OTA "push update to all" ----
+    @GET("app/release/latest")
+    suspend fun latestRelease(): AppReleaseDto
+
+    @POST("app/release")
+    suspend fun publishRelease(@Body body: AppReleasePublish): AppReleaseDto
 }

@@ -117,6 +117,7 @@ fun IntegrationsScreen(vm: AppViewModel, nav: NavController) {
     connecting?.let { provider ->
         var value by remember { mutableStateOf("") }
         val needsWebhook = provider.key in listOf("SLACK", "TEAMS", "WEBHOOK")
+        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
         AlertDialog(
             onDismissRequest = { connecting = null },
             icon = { BrandLogo(provider.icon, provider.name, 32.dp) },
@@ -124,8 +125,8 @@ fun IntegrationsScreen(vm: AppViewModel, nav: NavController) {
             text = {
                 Column {
                     Text(
-                        if (needsWebhook) "Paste the incoming webhook URL from ${provider.name}."
-                        else "Paste your ${provider.name} API token.",
+                        if (needsWebhook) "Paste the incoming webhook URL from ${provider.name} — one tap below grabs it from your clipboard."
+                        else "Paste your ${provider.name} API token — one tap below grabs it from your clipboard.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(Modifier.height(12.dp))
@@ -135,6 +136,9 @@ fun IntegrationsScreen(vm: AppViewModel, nav: NavController) {
                         singleLine = true,
                         label = { Text(if (needsWebhook) "Webhook URL" else "API token") },
                         modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            TextButton(onClick = { clipboard.getText()?.text?.let { value = it } }) { Text("Paste") }
+                        },
                     )
                 }
             },
@@ -175,16 +179,19 @@ private fun ProviderRow(provider: Provider, statusText: String, trailing: @Compo
 
 @Composable
 private fun BrandLogo(@DrawableRes icon: Int, name: String, size: androidx.compose.ui.unit.Dp) {
+    // Always sit on white (like a real app tile) so brand marks — including dark ones like Notion —
+    // stay legible in both light and dark themes.
     Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(10.dp),
+        color = androidx.compose.ui.graphics.Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
         modifier = Modifier.size(size + 12.dp).semantics { contentDescription = "$name logo" },
     ) {
         Box(contentAlignment = Alignment.Center) {
             Image(
                 painter = painterResource(id = icon),
                 contentDescription = null,
-                modifier = Modifier.size(size - 4.dp),
+                modifier = Modifier.size(size - 6.dp),
             )
         }
     }

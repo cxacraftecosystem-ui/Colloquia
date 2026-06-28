@@ -49,6 +49,39 @@ data class FolderDto(
     val parentId: String? = null,
 )
 
+// ---- OTA app releases ----
+@Serializable
+data class AppReleaseDto(
+    val versionCode: Int = 0,
+    val versionName: String = "",
+    val url: String? = null,
+    val downloadUrl: String? = null,
+    val notes: String? = null,
+    val publishedAt: String? = null,
+)
+
+@Serializable
+data class AppReleasePublish(
+    val versionCode: Int,
+    val versionName: String,
+    val objectKey: String,
+    val url: String? = null,
+    val notes: String? = null,
+)
+
+// ---- Settings ----
+@Serializable
+data class AppSettingsDto(
+    val transcriptionMode: String = "REFINED",
+    val defaultLanguage: String? = null,
+)
+
+@Serializable
+data class AppSettingsUpdate(
+    val transcriptionMode: String? = null,
+    val defaultLanguage: String? = null,
+)
+
 @Serializable
 data class SegmentDto(
     val idx: Int,
