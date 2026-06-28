@@ -53,6 +53,7 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
     var tab by remember { mutableStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
     var renameOpen by remember { mutableStateOf(false) }
+    var renameSpeakersOpen by remember { mutableStateOf(false) }
 
     // In-app playback (private bucket -> short-lived presigned URL fetched once).
     val player = rememberRecordingPlayer()
@@ -83,11 +84,15 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
                 actions = {
                     if (rec != null) {
                         IconButton(onClick = { vm.toggleFavorite(rec.id) }) {
-                            Icon(if (rec.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite")
+                            Icon(
+                                if (rec.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite",
+                                tint = if (rec.isFavorite) androidx.compose.ui.graphics.Color(0xFFE0556B) else LocalContentColor.current,
+                            )
                         }
                         IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, "More") }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             MenuItem("Rename", Icons.Default.Edit) { menuOpen = false; renameOpen = true }
+                            MenuItem("Rename speakers", Icons.Default.RecordVoiceOver) { menuOpen = false; renameSpeakersOpen = true }
                             MenuItem(if (rec.isPinned) "Unpin" else "Pin", Icons.Default.PushPin) { menuOpen = false; vm.togglePin(rec.id) }
                             MenuItem(if (rec.isArchived) "Unarchive" else "Archive", Icons.Default.Archive) { menuOpen = false; vm.toggleArchive(rec.id) }
                             MenuItem("Regenerate title (AI)", Icons.Default.AutoAwesome) { menuOpen = false; vm.regenerateTitle(rec.id) }
@@ -159,6 +164,48 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
             text = { OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true) },
             confirmButton = { TextButton(onClick = { rec?.let { vm.rename(it.id, newName) }; renameOpen = false }) { Text("Save") } },
             dismissButton = { TextButton(onClick = { renameOpen = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (renameSpeakersOpen && rec != null) {
+        val speakers = remember(rec.transcript?.segments) {
+            (rec.transcript?.segments ?: emptyList()).mapNotNull { it.speaker?.takeIf { s -> s.isNotBlank() } }.distinct()
+        }
+        // One editable field per detected speaker, seeded with the current label.
+        val edits = remember(speakers) { mutableStateMapOf<String, String>().apply { speakers.forEach { put(it, it) } } }
+        AlertDialog(
+            onDismissRequest = { renameSpeakersOpen = false },
+            title = { Text("Rename speakers") },
+            text = {
+                if (speakers.isEmpty()) {
+                    Text("No speakers were detected in this transcript yet.")
+                } else {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Renaming a speaker updates it everywhere — transcript, conversation, summary and actions.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        speakers.forEach { original ->
+                            OutlinedTextField(
+                                value = edits[original] ?: original,
+                                onValueChange = { edits[original] = it },
+                                label = { Text(original) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = speakers.isNotEmpty(),
+                    onClick = {
+                        val renames = edits.filter { (k, v) -> v.isNotBlank() && v.trim() != k }
+                        if (renames.isNotEmpty()) vm.renameSpeakers(rec.id, renames)
+                        renameSpeakersOpen = false
+                    },
+                ) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { renameSpeakersOpen = false }) { Text("Cancel") } },
         )
     }
 }
@@ -412,13 +459,19 @@ private fun ConversationTab(vm: AppViewModel, rec: RecordingDto) {
 private fun ConversationSection(title: String, subtitle: String?, markdown: String, onCopy: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
             subtitle?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         IconButton(onClick = onCopy) { Icon(Icons.Default.ContentCopy, "Copy") }
     }
     Spacer(Modifier.height(4.dp))
-    MarkdownText(markdown, Modifier.fillMaxWidth())
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        MarkdownText(markdown, Modifier.fillMaxWidth().padding(12.dp))
+    }
 }
 
 @Composable

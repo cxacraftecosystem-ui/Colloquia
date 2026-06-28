@@ -1,6 +1,7 @@
 package com.transcriptai.app.ui
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -99,8 +100,7 @@ fun LibraryScreen(vm: AppViewModel, nav: NavController) {
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     items(vm.recordings, key = { it.id }) { rec ->
-                        RecordingRow(rec, onClick = { nav.navigate("detail/${rec.id}") },
-                            onFavorite = { vm.toggleFavorite(rec.id) }, onPin = { vm.togglePin(rec.id) })
+                        RecordingRow(rec, vm, onOpen = { nav.navigate("detail/${rec.id}") })
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
                     }
                     item { Spacer(Modifier.height(80.dp)) }
@@ -110,36 +110,76 @@ fun LibraryScreen(vm: AppViewModel, nav: NavController) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RecordingRow(rec: RecordingDto, onClick: () -> Unit, onFavorite: () -> Unit, onPin: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (rec.isPinned) { Icon(Icons.Default.PushPin, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)) }
-                Text(rec.aiTitle ?: rec.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            }
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                StatusChip(rec.transcriptStatus)
-                Spacer(Modifier.width(8.dp))
-                Text(fmtDuration(rec.durationSec), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                rec.folder?.let {
+private fun RecordingRow(rec: RecordingDto, vm: AppViewModel, onOpen: () -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var renameOpen by remember { mutableStateOf(false) }
+    // Pinned shows as the theme's ink (black in light, white in dark); unpinned is muted grey.
+    val pinTint = if (rec.isPinned) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    Box {
+        Row(
+            Modifier.fillMaxWidth()
+                .combinedClickable(onClick = onOpen, onLongClick = { menuOpen = true })
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (rec.isPinned) { Icon(Icons.Default.PushPin, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)) }
+                    Text(rec.aiTitle ?: rec.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StatusChip(rec.transcriptStatus)
                     Spacer(Modifier.width(8.dp))
-                    Text("• ${it.name}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    Text(fmtDuration(rec.durationSec), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    rec.folder?.let {
+                        Spacer(Modifier.width(8.dp))
+                        Text("• ${it.name}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
+            IconButton(onClick = { vm.togglePin(rec.id) }) {
+                Icon(Icons.Default.PushPin, "Pin", tint = pinTint)
+            }
+            IconButton(onClick = { vm.toggleFavorite(rec.id) }) {
+                Icon(
+                    if (rec.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite",
+                    tint = if (rec.isFavorite) Color(0xFFE0556B) else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
-        IconButton(onClick = onPin) {
-            Icon(Icons.Default.PushPin, "Pin", tint = if (rec.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        IconButton(onClick = onFavorite) {
-            Icon(
-                if (rec.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite",
-                tint = if (rec.isFavorite) Color(0xFFE0556B) else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        // Long-press context menu: the same per-recording actions available inside the detail screen.
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            RowMenuItem("Open", Icons.Default.Launch) { menuOpen = false; onOpen() }
+            RowMenuItem("Rename", Icons.Default.Edit) { menuOpen = false; renameOpen = true }
+            RowMenuItem(if (rec.isFavorite) "Unfavorite" else "Favorite", if (rec.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder) { menuOpen = false; vm.toggleFavorite(rec.id) }
+            RowMenuItem(if (rec.isPinned) "Unpin" else "Pin", Icons.Default.PushPin) { menuOpen = false; vm.togglePin(rec.id) }
+            RowMenuItem(if (rec.isArchived) "Unarchive" else "Archive", Icons.Default.Archive) { menuOpen = false; vm.toggleArchive(rec.id) }
+            HorizontalDivider()
+            RowMenuItem("Delete", Icons.Default.Delete, destructive = true) { menuOpen = false; vm.delete(rec.id) }
         }
     }
+
+    if (renameOpen) {
+        var newName by remember { mutableStateOf(rec.title) }
+        AlertDialog(
+            onDismissRequest = { renameOpen = false },
+            title = { Text("Rename") },
+            text = { OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true) },
+            confirmButton = { TextButton(onClick = { vm.rename(rec.id, newName); renameOpen = false }) { Text("Save") } },
+            dismissButton = { TextButton(onClick = { renameOpen = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun RowMenuItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, destructive: Boolean = false, onClick: () -> Unit) {
+    val tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+    DropdownMenuItem(
+        text = { Text(label, color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) },
+        leadingIcon = { Icon(icon, null, tint = tint) },
+        onClick = onClick,
+    )
 }

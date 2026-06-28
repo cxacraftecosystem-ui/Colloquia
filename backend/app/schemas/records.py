@@ -36,6 +36,12 @@ class SegmentEdit(BaseModel):
     text: str
 
 
+class SpeakerRename(BaseModel):
+    # Rename a speaker label (e.g. "Speaker 1" -> "Ankit") everywhere it appears for this recording.
+    old: str
+    new: str
+
+
 class ManualTranscript(BaseModel):
     rawText: str
 

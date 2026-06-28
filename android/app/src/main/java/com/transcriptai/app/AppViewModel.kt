@@ -192,6 +192,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleActionItem(id: String, itemId: String) = io { repo.api.toggleActionItem(id, itemId); loadDetail(id) }
     fun regenerateTitle(id: String) = io { repo.api.regenerateTitle(id); loadDetail(id) }
     fun editSegment(id: String, idx: Int, text: String) = io { repo.api.editSegment(id, idx, SegmentEdit(text)); loadDetail(id) }
+    /** Apply one or more speaker renames sequentially (avoids racing transcript updates), then reload. */
+    fun renameSpeakers(id: String, renames: Map<String, String>) = io {
+        for ((old, new) in renames) {
+            if (new.isNotBlank() && new.trim() != old.trim()) {
+                repo.api.renameSpeaker(id, SpeakerRename(old.trim(), new.trim()))
+            }
+        }
+        loadDetail(id)
+    }
 
     fun transform(id: String, kind: String, arg: String?, onResult: (TransformResult) -> Unit) = io {
         val res = when (kind) {

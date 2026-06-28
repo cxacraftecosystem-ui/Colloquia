@@ -125,16 +125,10 @@ class Repository(context: Context) {
 
     fun pendingCount(): Int = outbox.all().size
 
-    /** Download an export (txt/md/pdf/docx) through the authenticated API and return the bytes. */
-    suspend fun exportBytes(recordingId: String, fmt: String): ByteArray {
-        val base = com.transcriptai.app.BuildConfig.DEFAULT_API_BASE_URL.trimEnd('/')
-        val url = "$base/recordings/$recordingId/export.$fmt"
-        val req = Request.Builder().url(url).get().build()
-        http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) throw RuntimeException("Export failed: HTTP ${resp.code}")
-            return resp.body?.bytes() ?: ByteArray(0)
-        }
-    }
+    /** Download an export (txt/md/pdf/docx) through the authenticated Retrofit API and return the
+     *  bytes. Using the API client guarantees the bearer token + gateway-retry behaviour. */
+    suspend fun exportBytes(recordingId: String, fmt: String): ByteArray =
+        api.export(recordingId, fmt).use { it.bytes() }
 
     // ---------------------------------------------------------------- file import
 

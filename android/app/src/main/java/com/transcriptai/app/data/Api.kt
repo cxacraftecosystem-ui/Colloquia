@@ -1,5 +1,6 @@
 package com.transcriptai.app.data
 
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -8,6 +9,7 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 interface TranscriptApi {
     @POST("auth/login")
@@ -68,6 +70,13 @@ interface TranscriptApi {
 
     @PATCH("recordings/{id}/transcript/segments/{idx}")
     suspend fun editSegment(@Path("id") id: String, @Path("idx") idx: Int, @Body body: SegmentEdit): SegmentDto
+
+    @PATCH("recordings/{id}/transcript/speaker")
+    suspend fun renameSpeaker(@Path("id") id: String, @Body body: SpeakerRename): TranscriptDto
+
+    @Streaming
+    @GET("recordings/{id}/export.{fmt}")
+    suspend fun export(@Path("id") id: String, @Path("fmt") fmt: String): ResponseBody
 
     @POST("recordings/{id}/transcribe-now")
     suspend fun transcribeNow(@Path("id") id: String): Map<String, String?>

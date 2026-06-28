@@ -221,6 +221,9 @@ data class RecordingUpdate(
 data class SegmentEdit(val text: String)
 
 @Serializable
+data class SpeakerRename(val old: String, val new: String)
+
+@Serializable
 data class ChatRequest(val question: String)
 
 @Serializable
