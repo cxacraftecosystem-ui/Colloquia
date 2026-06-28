@@ -12,8 +12,9 @@ router = APIRouter(prefix="/devices", tags=["devices"])
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def register_device(payload: DeviceRegister, current_user: Any = Depends(get_current_user)) -> dict[str, Any]:
-    """Register an FCM device token for push. (Real sends require FCM_SERVER_KEY; tokens are stored
-    regardless so push can be enabled later without a client change.)"""
+    """Register an FCM device token for push. Sends use FCM HTTP v1 via the service account
+    (FCM_SERVICE_ACCOUNT_FILE); tokens are stored regardless, so push is a graceful no-op if the
+    server credential is absent."""
     row = await db.devicetoken.upsert(
         where={"token": payload.token},
         data={
