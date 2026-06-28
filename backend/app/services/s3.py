@@ -73,6 +73,18 @@ def presign_put_url(object_key: str, mime_type: str) -> str:
     )
 
 
+def presign_get_url(object_key: str, expires: int = 3600) -> str:
+    """A short-lived presigned GET URL — works even when the bucket is private (it is). Used for OTA
+    APK downloads and any authenticated client-side fetch of an object by key."""
+    settings = get_settings()
+    return _client().generate_presigned_url(
+        ClientMethod="get_object",
+        Params={"Bucket": settings.aws_s3_bucket, "Key": object_key},
+        ExpiresIn=expires,
+        HttpMethod="GET",
+    )
+
+
 def create_multipart_upload(object_key: str, mime_type: str) -> str:
     response = _client().create_multipart_upload(
         Bucket=get_settings().aws_s3_bucket,

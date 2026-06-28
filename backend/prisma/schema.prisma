@@ -286,6 +286,23 @@ model AppSetting {
   @@map("ta_app_settings")
 }
 
+// Published Android app releases for OTA "push update to all". The master admin's device uploads its
+// own APK to object storage (via /media/presign) and records the version here; other devices poll
+// /app/release/latest and self-install when versionCode exceeds their own. Mirrors the field-repo.
+model AppRelease {
+  id            String   @id @default(cuid())
+  versionCode   Int
+  versionName   String
+  objectKey     String
+  url           String?
+  notes         String?
+  publishedById String?
+  publishedAt   DateTime @default(now())
+
+  @@index([versionCode])
+  @@map("ta_app_releases")
+}
+
 // ============================================================================
 // Phase 2 — productivity, integrations, collaboration, knowledge, automation.
 // All additive, all ta_* mapped, all String-typed status/kind columns.

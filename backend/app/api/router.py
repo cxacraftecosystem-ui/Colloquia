@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.routes import (
     ai,
     analytics,
+    app_release,
     auth,
     automation,
     collaboration,
@@ -47,6 +48,7 @@ api_router.include_router(knowledge.router)
 api_router.include_router(insights.router)
 api_router.include_router(voice.router)
 api_router.include_router(devices.router)
+api_router.include_router(app_release.router)
 
 # WebSocket route (registered on the app, not under the /api APIRouter prefix include).
 live_router = live.router

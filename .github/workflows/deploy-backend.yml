@@ -60,7 +60,7 @@ jobs:
         env:
           FCM_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
 
-      - name: Install deps, create/sync tables, restart
+      - name: Install deps, refresh systemd units, create/sync tables, restart
         run: |
           ssh ubuntu@${{ secrets.EC2_HOST }} 'bash -s' <<'REMOTE'
           set -euxo pipefail
@@ -69,16 +69,66 @@ jobs:
           ./.venv/bin/pip install --upgrade pip
           ./.venv/bin/pip install -e .
           PATH="$PWD/.venv/bin:$PATH" ./.venv/bin/python -m prisma generate
-          # ta_* tables are created additively from the generated SQL (never touches other apps'
-          # tables or the shared _prisma_migrations table). Safe to re-run: errors on already-existing
-          # tables are ignored so the deploy proceeds.
+
+          # --- Refresh systemd units so an already-provisioned box gets the pooler fix --------------
+          # The box was first provisioned with uvicorn --workers 2 and the queue running in-process.
+          # That multiprocess supervisor SIGKILLs a worker whose health-ping is starved by a heavy
+          # transcription chunk, orphaning its Prisma query-engine and eventually exhausting the
+          # Supabase pooler (HTTP 500 on every DB call). Fix = ONE uvicorn worker + a SEPARATE queue
+          # service + KillMode=control-group. Written here (not only in terraform) so existing boxes
+          # are repaired on the next deploy without re-provisioning.
+          sudo tee /etc/systemd/system/colloquia.service >/dev/null <<'UNIT'
+          [Unit]
+          Description=TranscriptAI (Colloquia) API
+          After=network.target
+          [Service]
+          User=ubuntu
+          WorkingDirectory=/home/ubuntu/app/backend
+          EnvironmentFile=/home/ubuntu/app/backend/.env
+          Environment=MEDIA_QUEUE_WORKER_ENABLED=false
+          ExecStart=/home/ubuntu/app/backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8010 --workers 1
+          Restart=always
+          RestartSec=10
+          KillMode=control-group
+          TimeoutStopSec=20
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          sudo tee /etc/systemd/system/colloquia-queue.service >/dev/null <<'UNIT'
+          [Unit]
+          Description=TranscriptAI (Colloquia) media queue worker
+          After=network.target
+          [Service]
+          User=ubuntu
+          WorkingDirectory=/home/ubuntu/app/backend
+          EnvironmentFile=/home/ubuntu/app/backend/.env
+          ExecStart=/home/ubuntu/app/backend/.venv/bin/python -m app.worker
+          Restart=always
+          RestartSec=10
+          KillMode=control-group
+          TimeoutStopSec=30
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          sudo systemctl daemon-reload
+          sudo systemctl enable colloquia colloquia-queue || true
+
+          # Stop the web app first so it releases its pooler sessions before we run DDL, then create
+          # the ta_* tables additively (idempotent; errors on already-existing tables are ignored).
+          sudo systemctl stop colloquia colloquia-queue || true
+          sleep 3
           if [ -f prisma/create_tables.sql ]; then
             PATH="$PWD/.venv/bin:$PATH" ./.venv/bin/python -m prisma db execute --schema=prisma/schema.prisma --file prisma/create_tables.sql || true
           fi
           if [ -f prisma/phase2_tables.sql ]; then
             PATH="$PWD/.venv/bin:$PATH" ./.venv/bin/python -m prisma db execute --schema=prisma/schema.prisma --file prisma/phase2_tables.sql || true
           fi
+          if [ -f prisma/app_release_table.sql ]; then
+            PATH="$PWD/.venv/bin:$PATH" ./.venv/bin/python -m prisma db execute --schema=prisma/schema.prisma --file prisma/app_release_table.sql || true
+          fi
+
           sudo systemctl restart colloquia
+          sudo systemctl restart colloquia-queue
           for i in $(seq 1 40); do
             if curl -fsS http://127.0.0.1:8010/health >/dev/null 2>&1; then echo "healthy after ${i} tries"; break; fi
             if [ "$i" = "40" ]; then echo "service did not become healthy:"; sudo journalctl -u colloquia -n 80 --no-pager; exit 1; fi
