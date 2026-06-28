@@ -19,7 +19,9 @@ everything as deferred; most of it is now built — see below.)
 - **HTTPS + IPv6** — CloudFront in front of the API.
 
 ## ⚠️ Needs your action to fully activate
-- **Android FCM client** — add `google-services.json` to `android/app/` + apply the `com.google.gms.google-services` plugin so the app can register device tokens. The dependency + service + registration code are already in place.
+- **FCM push (two concrete steps, same Firebase project both sides):**
+  1. *Server:* the deployed `BACKEND_ENV` must set `FCM_SERVICE_ACCOUNT_FILE=fcm-service-account.json` (the deploy already writes that file from the `FCM_SERVICE_ACCOUNT_JSON` secret; without the env var the backend stores tokens but sends nothing).
+  2. *Client:* add `google-services.json` to `android/app/` (Firebase console → Project settings → your Android app) + apply the `com.google.gms.google-services` plugin so the app can register device tokens. The dependency + service + registration code are already in place. Note: a Desktop ("installed") OAuth `client_secret_*.json` is **not** `google-services.json` and is not used by the app.
 - **Android Google sign-in** — register an Android-type OAuth client (package `com.transcriptai.app` + build SHA-1).
 - **Each 3rd-party integration** — enter its webhook URL / API token in the Integrations screen (or via `PUT /integrations`).
 - **Heavy features on the EC2 box** — flip `LITE_MODE=false` in `BACKEND_ENV` only on a larger instance (the free-tier t3.micro should stay lite).
