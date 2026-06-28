@@ -24,6 +24,7 @@ fun LibraryScreen(vm: AppViewModel, nav: NavController) {
     LaunchedEffect(Unit) {
         vm.refreshAll()
         vm.flushOutbox()
+        vm.registerPushToken()
     }
 
     Scaffold(

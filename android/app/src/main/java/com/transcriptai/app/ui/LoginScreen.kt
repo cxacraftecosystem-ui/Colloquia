@@ -35,7 +35,7 @@ fun LoginScreen(vm: AppViewModel, activity: ComponentActivity, nav: NavControlle
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("TranscriptAI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Colloquia", style = MaterialTheme.typography.headlineLarge)
         Text("Record. Transcribe. Understand.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
         Spacer(Modifier.height(28.dp))
 

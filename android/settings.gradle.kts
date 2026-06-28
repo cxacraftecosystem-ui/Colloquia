@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "TranscriptAIAndroid"
+rootProject.name = "ColloquiaAndroid"
 include(":app")

@@ -12,14 +12,14 @@
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.TranscriptAI"
+        android:theme="@style/Theme.Colloquia"
         android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.TranscriptAI">
+            android:theme="@style/Theme.Colloquia">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -30,6 +30,14 @@
             android:name=".recording.RecorderService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <service
+            android:name=".push.ColloquiaMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <provider
             android:name="androidx.core.content.FileProvider"

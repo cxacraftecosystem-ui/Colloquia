@@ -18,6 +18,14 @@ jobs:
           python-version: "3.12"
       - name: Install + import-check + lint
         working-directory: backend
+        env:
+          # Settings require these at import time (app.core.db builds the client from get_settings()).
+          # Dummy values are fine — CI doesn't connect to the DB/AWS, it only verifies the app imports.
+          DATABASE_URL: postgresql://user:pass@localhost:5432/ci
+          JWT_SECRET: ci-dummy-secret
+          AWS_ACCESS_KEY_ID: ci
+          AWS_SECRET_ACCESS_KEY: ci
+          AWS_S3_BUCKET: ci-bucket
         run: |
           python -m pip install --upgrade pip
           pip install -e .

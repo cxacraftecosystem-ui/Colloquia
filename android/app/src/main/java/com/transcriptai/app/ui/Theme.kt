@@ -97,7 +97,7 @@ private val AppTypography = Typography(
 )
 
 @Composable
-fun TranscriptAITheme(darkMode: Boolean? = null, content: @Composable () -> Unit) {
+fun ColloquiaTheme(darkMode: Boolean? = null, content: @Composable () -> Unit) {
     val dark = darkMode ?: isSystemInDarkTheme()
     MaterialTheme(
         colorScheme = if (dark) Dark else Light,

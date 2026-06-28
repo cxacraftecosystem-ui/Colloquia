@@ -23,7 +23,7 @@ class RecorderService : Service() {
         ensureChannel(this)
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Recording")
-            .setContentText("TranscriptAI is recording audio")
+            .setContentText("Colloquia is recording audio")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setOngoing(true)
             .build()

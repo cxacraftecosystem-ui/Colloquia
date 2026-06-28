@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         Notifications.ensureChannel(this)
         setContent {
-            TranscriptAITheme(darkMode = vm.darkMode) {
+            ColloquiaTheme(darkMode = vm.darkMode) {
                 val nav = rememberNavController()
                 val start = if (vm.isLoggedIn) "library" else "login"
                 NavHost(navController = nav, startDestination = start) {

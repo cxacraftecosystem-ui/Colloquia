@@ -20,7 +20,7 @@ async def main() -> None:
     await connect_db()
     try:
         email = (os.getenv("ADMIN_EMAIL") or settings.master_admin_email or "admin@example.com").lower()
-        name = os.getenv("ADMIN_NAME") or "TranscriptAI Admin"
+        name = os.getenv("ADMIN_NAME") or "Colloquia Admin"
         password = os.getenv("ADMIN_PASSWORD") or ""
         role = "MASTER_ADMIN" if email == (settings.master_admin_email or "").lower() else "ADMIN"
 

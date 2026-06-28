@@ -182,6 +182,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (n > 0) refreshRecordings()
     }
 
+    /** Register this device's FCM token for push. No-op until google-services.json is added (FCM
+     *  can't initialize without it); failures are swallowed so they never disrupt the UI. */
+    fun registerPushToken() {
+        try {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                .addOnCompleteListener { task ->
+                    val token = if (task.isSuccessful) task.result else null
+                    if (!token.isNullOrBlank()) {
+                        viewModelScope.launch {
+                            runCatching { repo.api.registerDevice(mapOf("token" to token, "platform" to "android")) }
+                        }
+                    }
+                }
+        } catch (_: Exception) {
+            // Firebase not configured (no google-services.json) — ignore.
+        }
+    }
+
     // ---------------------------------------------------------------- phase 2
     var askAnswer by mutableStateOf<String?>(null)
     var searchHits by mutableStateOf<List<KnowledgeHit>>(emptyList())

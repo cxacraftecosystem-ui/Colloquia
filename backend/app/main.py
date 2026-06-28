@@ -102,9 +102,9 @@ async def _queue_worker() -> None:
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
-        title="TranscriptAI API",
-        version="0.1.0",
-        description="Audio recording + transcription + AI analysis backend.",
+        title="Colloquia API",
+        version="0.2.0",
+        description="Colloquia — audio recording + transcription + AI analysis backend.",
         lifespan=lifespan,
     )
     app.add_middleware(
