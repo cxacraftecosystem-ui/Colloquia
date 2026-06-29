@@ -76,6 +76,25 @@ def retry_after_seconds(response: requests.Response | None) -> float | None:
         return None
 
 
+def _is_quota_error(response: requests.Response | None) -> bool:
+    """True for OpenAI's `insufficient_quota` (HTTP 429 but PERMANENT — the account/key is out of
+    credits/billing). Retrying it never helps and just burns time toward the gateway timeout."""
+    if response is None or response.status_code != 429:
+        return False
+    try:
+        err = (response.json() or {}).get("error") or {}
+        return err.get("code") == "insufficient_quota" or "quota" in str(err.get("message", "")).lower()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _is_permanent_error(response: requests.Response | None) -> bool:
+    """Errors that won't succeed on retry: out-of-quota, bad key (401), forbidden (403)."""
+    if response is None:
+        return False
+    return response.status_code in {401, 403} or _is_quota_error(response)
+
+
 def _backoff_delay(attempt: int, retry_after: float | None) -> float:
     if retry_after is not None and retry_after > 0:
         return min(retry_after, _BACKOFF_CAP_SECONDS)
@@ -97,7 +116,11 @@ def _request_with_retry(do_request: Callable[[], requests.Response]) -> requests
             time.sleep(_backoff_delay(attempt, None))
             attempt += 1
             continue
-        if response.status_code in _RETRYABLE_STATUS and attempt < _MAX_HTTP_RETRIES:
+        if (
+            response.status_code in _RETRYABLE_STATUS
+            and attempt < _MAX_HTTP_RETRIES
+            and not _is_permanent_error(response)
+        ):
             delay = _backoff_delay(attempt, retry_after_seconds(response))
             logger.info(
                 "AI call %s -> HTTP %s; retry %d/%d in %.1fs",
@@ -116,6 +139,17 @@ def _failed_result(exc: Exception, **fields: Any) -> dict[str, Any]:
     the caller backs off / the route returns 429); everything else -> FAILED."""
     response = getattr(exc, "response", None)
     code = response.status_code if response is not None else None
+    if _is_quota_error(response):
+        return {
+            "available": False,
+            "status": "QUOTA",
+            "message": (
+                "AI features are unavailable: the OpenAI account is out of quota/credits. Add billing "
+                "or credits to the OpenAI account (the one whose API key is configured) to re-enable "
+                "summaries, action items, the refined conversation and chat."
+            ),
+            **fields,
+        }
     if code in {429, 503}:
         return {
             "available": True,
@@ -125,6 +159,41 @@ def _failed_result(exc: Exception, **fields: Any) -> dict[str, Any]:
             **fields,
         }
     return {"available": True, "status": "FAILED", "message": str(exc), **fields}
+
+
+async def ai_healthcheck(settings: Settings) -> dict[str, Any]:
+    """A tiny, single (non-retried) chat call to report whether the configured OpenAI key can actually
+    be used right now. Returns ONLY sanitized status — never the key. Powers GET /health/ai."""
+    if not settings.openai_api_key:
+        return {"available": False, "configured": False, "message": "OPENAI_API_KEY is not configured."}
+
+    def _do() -> requests.Response:
+        return requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {settings.openai_api_key}", "Content-Type": "application/json"},
+            json={"model": settings.openai_chat_model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1},
+            timeout=20,
+        )
+
+    try:
+        resp = await asyncio.to_thread(_do)
+    except Exception as exc:  # noqa: BLE001
+        return {"available": False, "configured": True, "message": str(exc)[:200]}
+    if resp.status_code < 400:
+        return {"available": True, "configured": True, "providerStatus": resp.status_code, "model": settings.openai_chat_model}
+    err: dict[str, Any] = {}
+    try:
+        err = (resp.json() or {}).get("error") or {}
+    except Exception:  # noqa: BLE001
+        pass
+    return {
+        "available": False,
+        "configured": True,
+        "providerStatus": resp.status_code,
+        "errorType": err.get("type"),
+        "errorCode": err.get("code"),
+        "message": str(err.get("message", ""))[:240],
+    }
 
 
 # --------------------------------------------------------------------------- transcription

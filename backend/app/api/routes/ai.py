@@ -21,6 +21,11 @@ def _ensure_ai_ok(res: dict[str, Any]) -> dict[str, Any]:
     state = str(res.get("status") or "").upper()
     if state == "COMPLETED":
         return res
+    if state == "QUOTA":
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=res.get("message") or "AI features are unavailable: the OpenAI account is out of quota/credits.",
+        )
     if state == "RATE_LIMITED":
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

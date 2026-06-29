@@ -23,6 +23,7 @@ import java.io.IOException
 fun humanError(e: Throwable, fallback: String = "Something went wrong. Please try again."): String = when (e) {
     is HttpException -> when (e.code()) {
         401 -> "Your session expired. Please sign in again."
+        402 -> "AI features are out of quota — the OpenAI account on the server needs credits/billing to enable summaries, actions and chat."
         403 -> "You don't have access to that."
         404 -> "We couldn't find that."
         429 -> "Too many requests right now — please wait a moment and try again."
