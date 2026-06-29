@@ -18,13 +18,8 @@ from prisma import Json
 from app.core.config import Settings, get_settings
 from app.core.db import db
 from app.services.ai import (
-    assign_speakers_to_segments,
-    extract_items,
-    generate_title,
-    refine_transcript_text,
-    summarize,
+    analyze_full,
     transcribe_audio_bytes,
-    translate_markdown_to_english,
 )
 from app.services.app_settings import (
     load_app_settings,
@@ -47,15 +42,9 @@ STALE_PROCESSING_AFTER = timedelta(minutes=30)
 RATE_LIMIT_BASE_SECONDS = 30
 RATE_LIMIT_MAX_SECONDS = 900
 IDLE_LOAD_FACTOR = 0.6
-SUMMARY_TYPES = ["BRIEF", "DETAILED", "BULLETS", "MINUTES"]
-# Only ONE summary is generated automatically (keeps per-recording AI calls — and thus rate-limit
-# pressure — low). The other types are produced on demand from the Summary tab. The analysis job is
-# also made resumable (it skips work that already exists), so a mid-run 429 retries forward instead of
-# regenerating everything and re-burning the request budget.
-AUTO_SUMMARY_TYPES = ["BRIEF"]
-# A small gap between successive AI calls within a job, to avoid bursting past a tight per-minute quota.
-AI_CALL_PACING_SECONDS = 0.6
-ENGLISH_LANGUAGES = {"english", "en", "en-us", "en-gb"}
+# A whole recording's analysis (conversation, title, summary, extractions) is now ONE chat call
+# (ai.analyze_full), so there is no per-call fan-out to pace or make resumable — a 429 simply requeues
+# the single-call job. The other summary types (DETAILED / BULLETS / MINUTES) stay on-demand.
 
 # Single elected worker, so module-level cooldown state is safe.
 _rate_limit_cooldown_until: datetime | None = None
@@ -289,30 +278,15 @@ async def _store_transcript(recording: Any, result: dict[str, Any], settings: Se
     raw_text = result.get("text") or ""
     segments = result.get("segments") or []
 
-    # Speaker labels: Deepgram already returns TRUE diarization per segment — use it as-is. Only when
-    # segments have no speaker (Whisper path) do we fall back to chat-model labelling.
-    if segments and any(s.get("speaker") for s in segments):
-        speakers = [s.get("speaker") for s in segments]
-    else:
-        speakers = await assign_speakers_to_segments(segments, settings)
-
-    # Refinement: REFINED rewrites the raw text into a clean, speaker-labelled dialogue (original
-    # language). REFINED_TRANSLATED additionally produces an English translation of that dialogue —
-    # stored SEPARATELY so the app can show both the original-language and the English versions. The
-    # translation step is skipped when the source is already English (or detection is unknown English).
-    mode = transcription_mode(await load_app_settings())
-    refined_text: str | None = None
-    translated_text: str | None = None
-    if raw_text and mode in {"REFINED", "REFINED_TRANSLATED"}:
-        refined = await refine_transcript_text(raw_text, False, settings)
-        if refined.get("status") == "COMPLETED":
-            refined_text = refined.get("refined")
-        language = str(result.get("language") or "").strip().lower()
-        if mode == "REFINED_TRANSLATED" and refined_text and language not in ENGLISH_LANGUAGES:
-            await asyncio.sleep(AI_CALL_PACING_SECONDS)
-            translated = await translate_markdown_to_english(refined_text, settings)
-            if translated.get("status") == "COMPLETED":
-                translated_text = translated.get("translated")
+    # No AI calls here: the raw transcript + segments are stored immediately so the transcript shows up
+    # fast. The refined/translated CONVERSATION, title, summary and action items are all produced by a
+    # SINGLE downstream analyze_full() call in the chained ANALYSIS job (see _run_analysis). Segment
+    # speaker labels are only set when the provider (Deepgram) already returned true diarization.
+    speakers = (
+        [s.get("speaker") for s in segments]
+        if segments and any(s.get("speaker") for s in segments)
+        else [None] * len(segments)
+    )
 
     duration_ms = int(float(result.get("duration") or 0) * 1000) or (segments[-1]["endMs"] if segments else None)
     transcript = await db.transcript.upsert(
@@ -322,8 +296,6 @@ async def _store_transcript(recording: Any, result: dict[str, Any], settings: Se
                 "recordingId": recording.id,
                 "status": COMPLETED,
                 "rawText": raw_text,
-                "refinedText": refined_text,
-                "translatedText": translated_text,
                 "language": result.get("language"),
                 "model": settings.openai_transcription_model,
                 "durationMs": duration_ms,
@@ -331,8 +303,9 @@ async def _store_transcript(recording: Any, result: dict[str, Any], settings: Se
             "update": {
                 "status": COMPLETED,
                 "rawText": raw_text,
-                "refinedText": refined_text,
-                "translatedText": translated_text,
+                # Leave refined/translated to the analysis pass; clear stale values on a re-transcribe.
+                "refinedText": None,
+                "translatedText": None,
                 "language": result.get("language"),
                 "model": settings.openai_transcription_model,
                 "durationMs": duration_ms,
@@ -371,65 +344,57 @@ async def _store_transcript(recording: Any, result: dict[str, Any], settings: Se
 async def _run_analysis(job: Any, settings: Settings) -> None:
     recording = job.recording
     transcript = await db.transcript.find_unique(where={"recordingId": recording.id})
-    # Analyse the English text when available (translatedText) so summaries / action items come out in
-    # English; otherwise the refined dialogue, otherwise the raw transcript.
-    text = (
-        (transcript.translatedText or transcript.refinedText or transcript.rawText or "")
-        if transcript else ""
-    )
-    if not text.strip():
+    raw_text = (transcript.rawText or "") if transcript else ""
+    if not raw_text.strip():
         await _complete_job(job.id, {"status": EMPTY})
         return
 
-    def _guard_rate_limit(res: dict[str, Any]) -> None:
-        # If an analysis sub-call is throttled, abort and let the queue back off + retry the ANALYSIS
-        # job. Because every step below is skipped when its output already exists, the retry RESUMES
-        # from where it stopped instead of re-running (and re-throttling) the whole pass.
-        if str(res.get("status") or "").upper() == RATE_LIMITED:
-            raise RateLimited(res.get("retryAfter"))
+    # ONE call does everything: refined (+ optional English) conversation, title, summary, and all
+    # extractions. A 429 here just requeues the whole (single-call) job — no fan-out to re-throttle.
+    mode = transcription_mode(await load_app_settings())
+    res = await analyze_full(raw_text, mode == "REFINED_TRANSLATED", settings)
+    status = str(res.get("status") or "").upper()
+    if status == RATE_LIMITED:
+        raise RateLimited(res.get("retryAfter"))
+    if status != COMPLETED or not isinstance(res.get("data"), dict):
+        await _complete_job(job.id, {"status": status or FAILED, "message": res.get("message")})
+        return
+    data = res["data"]
 
-    # AI title (adopt as the display title when the user kept the default). Skip if already produced.
-    if not recording.aiTitle:
-        title_res = await generate_title(text, settings)
-        _guard_rate_limit(title_res)
-        if title_res.get("status") == COMPLETED and title_res.get("title"):
-            data = {"aiTitle": title_res["title"]}
-            if not recording.title or recording.title.lower().startswith(("recording", "new recording")):
-                data["title"] = title_res["title"]
-            await db.recording.update(where={"id": recording.id}, data=data)
-
-    # Summaries: generate ONLY the default type automatically; skip any that already exist. The rest
-    # (DETAILED / BULLETS / MINUTES) are produced on demand from the app.
-    for stype in AUTO_SUMMARY_TYPES:
-        existing = await db.summary.find_unique(
-            where={"recordingId_type": {"recordingId": recording.id, "type": stype}}
-        )
-        if existing and (existing.content or "").strip():
-            continue
-        await asyncio.sleep(AI_CALL_PACING_SECONDS)
-        res = await summarize(text, stype, settings)
-        _guard_rate_limit(res)
-        if res.get("status") == COMPLETED and res.get("content"):
-            await db.summary.upsert(
-                where={"recordingId_type": {"recordingId": recording.id, "type": stype}},
-                data={
-                    "create": {"recordingId": recording.id, "type": stype, "content": res["content"], "model": res.get("model")},
-                    "update": {"content": res["content"], "model": res.get("model")},
-                },
-            )
-
-    # Action items / decisions / takeaways / deadlines + entities / keywords / topics. Skip when this
-    # recording already has extractions (so a resumed job doesn't re-run the extraction call).
-    already_extracted = (
-        await db.actionitem.count(where={"recordingId": recording.id})
-        + await db.extracteditem.count(where={"recordingId": recording.id})
+    # Conversation (refined + optional English translation) and detected language.
+    refined = (str(data.get("refinedConversation") or "").strip()) or None
+    english = (str(data.get("englishConversation") or "").strip()) or None
+    language = data.get("language") or (transcript.language if transcript else None)
+    await db.transcript.update(
+        where={"recordingId": recording.id},
+        data={"refinedText": refined, "translatedText": english, "language": language},
     )
-    if not already_extracted:
-        await asyncio.sleep(AI_CALL_PACING_SECONDS)
-        ext = await extract_items(text, settings)
-        _guard_rate_limit(ext)
-        if ext.get("status") == COMPLETED and isinstance(ext.get("data"), dict):
-            await _store_extractions(recording.id, ext["data"])
+
+    # Title (adopt as the display title when the user kept the default) + language on the recording.
+    rec_update: dict[str, Any] = {}
+    title = str(data.get("title") or "").strip().strip('"')
+    if title:
+        rec_update["aiTitle"] = title
+        if not recording.title or recording.title.lower().startswith(("recording", "new recording")):
+            rec_update["title"] = title
+    if language:
+        rec_update["language"] = language
+    if rec_update:
+        await db.recording.update(where={"id": recording.id}, data=rec_update)
+
+    # Brief summary (the only one generated automatically; others are on-demand).
+    summary = str(data.get("summary") or "").strip()
+    if summary:
+        await db.summary.upsert(
+            where={"recordingId_type": {"recordingId": recording.id, "type": "BRIEF"}},
+            data={
+                "create": {"recordingId": recording.id, "type": "BRIEF", "content": summary, "model": res.get("model")},
+                "update": {"content": summary, "model": res.get("model")},
+            },
+        )
+
+    # Action items / decisions / takeaways / deadlines + entities / keywords / topics.
+    await _store_extractions(recording.id, data)
 
     # Phase 2 post-analysis hooks (best-effort; never fail the job):
     # 1) index segments for semantic / cross-transcript search (skipped in lite mode),

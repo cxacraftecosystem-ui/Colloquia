@@ -123,7 +123,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun loginOAuth(provider: String, code: String, onDone: (Boolean) -> Unit) = io {
         loading = true
         try {
-            user = repo.loginOAuth(provider, code, com.transcriptai.app.data.OAuthClient.redirectUri)
+            user = repo.loginOAuth(provider, code, com.transcriptai.app.data.OAuthClient.redirectUri(provider))
             onDone(true)
             refreshAll()
         } catch (e: Exception) {

@@ -13,8 +13,15 @@ import java.util.UUID
  * MainActivity), carrying `code` + `state`.
  */
 object OAuthClient {
-    val redirectUri: String = BuildConfig.OAUTH_REDIRECT_URI
+    // Azure accepts the custom-scheme redirect; Yahoo requires an HTTPS one, so Yahoo points at a
+    // backend callback (/api/auth/yahoo/callback) that 302s straight back to this custom scheme.
+    private val yahooHttpsRedirect: String = BuildConfig.DEFAULT_API_BASE_URL.trimEnd('/') + "/auth/yahoo/callback"
     private var pendingState: String? = null
+
+    fun redirectUri(provider: String): String = when (provider.uppercase()) {
+        "YAHOO" -> yahooHttpsRedirect
+        else -> BuildConfig.OAUTH_REDIRECT_URI
+    }
 
     fun clientId(provider: String): String = when (provider.uppercase()) {
         "MICROSOFT" -> BuildConfig.MICROSOFT_CLIENT_ID
@@ -46,7 +53,7 @@ object OAuthClient {
     }
 
     private fun buildAuthorizeUrl(provider: String, clientId: String, state: String): String? {
-        val redirect = Uri.encode(redirectUri)
+        val redirect = Uri.encode(redirectUri(provider))
         return when (provider.uppercase()) {
             "MICROSOFT" -> "https://login.microsoftonline.com/common/oauth2/v2.0/authorize" +
                 "?client_id=$clientId&response_type=code&redirect_uri=$redirect&response_mode=query" +

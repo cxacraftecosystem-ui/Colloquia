@@ -1,8 +1,10 @@
 import logging
 from typing import Any
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import RedirectResponse
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 
@@ -110,6 +112,19 @@ async def login(payload: LoginRequest) -> dict[str, Any]:
         subject=user.id, extra_claims={"email": user.email, "role": enum_value(user.role)}
     )
     return {"accessToken": access_token, "tokenType": "bearer", "user": serialize_user(user)}
+
+
+@router.get("/yahoo/callback")
+async def yahoo_callback(request: Request) -> RedirectResponse:
+    """Yahoo (unlike Azure) requires an HTTPS redirect URI and rejects custom schemes. So Yahoo redirects
+    the browser HERE (https://<host>/api/auth/yahoo/callback?code=...&state=...); we immediately bounce
+    to the app's custom scheme so MainActivity can finish sign-in (it forwards the code to /auth/login,
+    using THIS url as redirect_uri for the token exchange). No secrets are handled here."""
+    params = dict(request.query_params)
+    target = "com.transcriptai.app://oauth"
+    if params:
+        target += "?" + urlencode(params)
+    return RedirectResponse(url=target, status_code=status.HTTP_302_FOUND)
 
 
 @router.post("/google", response_model=TokenResponse)

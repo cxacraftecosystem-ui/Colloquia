@@ -54,12 +54,13 @@ _ANALYSIS_MAX_CHARS = 48_000
 # Sustained throttling still surfaces (so the durable queue can back off and the synchronous routes
 # can return a clean 429), but short spikes are absorbed silently here.
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
-# Low OpenAI tiers throttle aggressively (a single clip can fan out into several chat calls). Retry
-# more times and wait longer so a tight requests-per-minute budget is absorbed here rather than
-# surfacing to the user / requeueing the whole job.
-_MAX_HTTP_RETRIES = 6
-_BACKOFF_BASE_SECONDS = 2.0
-_BACKOFF_CAP_SECONDS = 60.0
+# Keep the in-request backoff SHORT: synchronous AI routes (chat, regenerate) run behind a CloudFront
+# origin with a ~30s timeout, so a long retry loop turns a transient 429 into a gateway 5xx ("server
+# had a hiccup"). We instead minimise the number of calls per recording (see analyze_full: ONE call
+# does title + conversation + summary + extractions) and let the durable QUEUE handle longer cooldowns.
+_MAX_HTTP_RETRIES = 4
+_BACKOFF_BASE_SECONDS = 1.0
+_BACKOFF_CAP_SECONDS = 8.0
 
 
 def retry_after_seconds(response: requests.Response | None) -> float | None:
@@ -474,6 +475,72 @@ async def assign_speakers_to_segments(
     except Exception as exc:  # noqa: BLE001 - labelling is best-effort
         logger.info("Speaker labelling failed (non-fatal): %s", exc)
         return [None] * len(segments)
+
+
+# --------------------------------------------------------------------------- combined analysis (ONE call)
+
+async def analyze_full(transcript_text: str, translate_to_english: bool, settings: Settings) -> dict[str, Any]:
+    """Produce EVERYTHING for a recording in a SINGLE chat call: the refined (and optionally English)
+    conversation, an AI title, a brief summary, action items / decisions / takeaways / deadlines, and
+    entities / keywords / topics — returned as one JSON object.
+
+    This replaces the previous fan-out (refine + translate + title + summary + extraction = up to five
+    calls), which blew through tight requests-per-minute quotas and surfaced as 429/5xx. One request
+    keeps a whole recording's analysis within even a very small budget.
+    """
+    if not settings.openai_api_key:
+        return _unavailable("data")
+    clipped = (transcript_text or "").strip()[:_ANALYSIS_MAX_CHARS]
+    if not clipped:
+        return {"available": True, "status": "EMPTY", "data": None}
+    translate_clause = (
+        ' Set "englishConversation" to the SAME dialogue translated into clear, natural English, '
+        "preserving the bold **Speaker N:** labels and any `---` rules; if the conversation is already "
+        "English, set it to an empty string."
+        if translate_to_english
+        else ' Set "englishConversation" to an empty string.'
+    )
+    system = (
+        "You are an expert meeting/audio analyst. From a raw, unpunctuated speech-to-text transcript "
+        "you produce a single JSON object. Be faithful: only restructure and lightly correct what is "
+        "present — never invent, add or remove information. " + now_context(settings)
+    )
+    user = (
+        "Analyse the transcript below and reply with JSON only, with EXACTLY these keys:\n"
+        "{\n"
+        '  "title": str,                  // short, specific, max 8 words, no quotes\n'
+        '  "language": str,               // the main language of the conversation\n'
+        '  "refinedConversation": str,    // the transcript reformatted as a clean Markdown dialogue:\n'
+        "                                 // each speaker turn on its own line beginning with a bold\n"
+        "                                 // label like **Speaker 1:**, consistent labels per voice,\n"
+        "                                 // fixed punctuation/casing, a `---` rule between clearly\n"
+        "                                 // distinct topics. Keep it faithful to the source.\n"
+        '  "englishConversation": str,    // see instruction below\n'
+        '  "summary": str,                // a concise 2-3 sentence summary\n'
+        '  "actionItems": [{"text": str, "assignee": str|null, "dueDate": str|null}],\n'
+        '  "decisions": [str],\n'
+        '  "takeaways": [str],\n'
+        '  "deadlines": [{"text": str, "dueDate": str|null}],\n'
+        '  "entities": [str], "keywords": [str], "topics": [str]\n'
+        "}\n"
+        "dueDate is ISO-8601 (YYYY-MM-DD, or YYYY-MM-DDTHH:MM when a time is given) whenever a date is "
+        "stated OR resolvable from a relative expression against the current date above; else null."
+        + translate_clause
+        + "\n\nRaw transcript:\n\n"
+        + clipped
+    )
+    try:
+        raw = await _chat(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            settings,
+            json_mode=True,
+        )
+        data = _extract_json(raw)
+        if not isinstance(data, dict) or not data:
+            return {"available": True, "status": "EMPTY", "data": None}
+        return {"available": True, "status": "COMPLETED", "data": data, "model": settings.openai_chat_model}
+    except requests.RequestException as exc:
+        return _failed_result(exc, data=None)
 
 
 # --------------------------------------------------------------------------- analysis (title / summary / extraction)
