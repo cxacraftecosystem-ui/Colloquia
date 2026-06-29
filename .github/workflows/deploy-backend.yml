@@ -49,6 +49,40 @@ jobs:
         env:
           BACKEND_ENV: ${{ secrets.BACKEND_ENV }}
 
+      - name: Append OAuth provider credentials (Yahoo / Microsoft) if configured
+        # Lets you store the OAuth client secrets as small individual repo secrets instead of editing
+        # the big BACKEND_ENV blob. Each is optional; only the ones that are set are appended to .env
+        # (last-wins over anything in BACKEND_ENV), so adding YAHOO_CLIENT_ID + YAHOO_CLIENT_SECRET and
+        # re-running this workflow is all it takes to enable Yahoo sign-in.
+        run: |
+          add() { if [ -n "$2" ]; then printf '%s=%s\n' "$1" "$2"; fi; }
+          {
+            add YAHOO_CLIENT_ID "$YAHOO_CLIENT_ID"
+            add YAHOO_CLIENT_SECRET "$YAHOO_CLIENT_SECRET"
+            add MICROSOFT_CLIENT_ID "$MICROSOFT_CLIENT_ID"
+            add MICROSOFT_CLIENT_SECRET "$MICROSOFT_CLIENT_SECRET"
+            add MICROSOFT_TENANT "$MICROSOFT_TENANT"
+          } > oauth.env
+          if [ -s oauth.env ]; then
+            ssh ubuntu@${{ secrets.EC2_HOST }} \
+              'cat > /tmp/oauth.env;
+               grep -vE "^(YAHOO_CLIENT_ID|YAHOO_CLIENT_SECRET|MICROSOFT_CLIENT_ID|MICROSOFT_CLIENT_SECRET|MICROSOFT_TENANT)=" /home/ubuntu/app/backend/.env > /tmp/env.new 2>/dev/null || true;
+               cat /tmp/oauth.env >> /tmp/env.new;
+               mv /tmp/env.new /home/ubuntu/app/backend/.env;
+               chmod 600 /home/ubuntu/app/backend/.env;
+               rm -f /tmp/oauth.env' < oauth.env
+            echo "Appended OAuth credentials ($(wc -l < oauth.env) line(s)) to the server .env."
+          else
+            echo "No individual OAuth secrets set; relying on BACKEND_ENV."
+          fi
+          rm -f oauth.env
+        env:
+          YAHOO_CLIENT_ID: ${{ secrets.YAHOO_CLIENT_ID }}
+          YAHOO_CLIENT_SECRET: ${{ secrets.YAHOO_CLIENT_SECRET }}
+          MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
+          MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
+          MICROSOFT_TENANT: ${{ secrets.MICROSOFT_TENANT }}
+
       - name: Write FCM service-account JSON on the server (for push, HTTP v1)
         run: |
           if [ -n "$FCM_JSON" ]; then
