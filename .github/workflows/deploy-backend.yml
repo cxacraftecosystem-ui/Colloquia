@@ -65,14 +65,17 @@ jobs:
             add MICROSOFT_TENANT "$MICROSOFT_TENANT"
           } > oauth.env
           if [ -s oauth.env ]; then
+            # Strip ONLY the keys we are actually overriding (never a key whose secret isn't set —
+            # stripping unconditionally would DELETE e.g. OPENAI_API_KEY from the server .env).
+            KEYS=$(cut -d= -f1 oauth.env | paste -sd '|' -)
             ssh ubuntu@${{ secrets.EC2_HOST }} \
-              'cat > /tmp/oauth.env;
-               grep -vE "^(OPENAI_API_KEY|YAHOO_CLIENT_ID|YAHOO_CLIENT_SECRET|MICROSOFT_CLIENT_ID|MICROSOFT_CLIENT_SECRET|MICROSOFT_TENANT)=" /home/ubuntu/app/backend/.env > /tmp/env.new 2>/dev/null || true;
+              "cat > /tmp/oauth.env;
+               grep -vE '^($KEYS)=' /home/ubuntu/app/backend/.env > /tmp/env.new 2>/dev/null || true;
                cat /tmp/oauth.env >> /tmp/env.new;
                mv /tmp/env.new /home/ubuntu/app/backend/.env;
                chmod 600 /home/ubuntu/app/backend/.env;
-               rm -f /tmp/oauth.env' < oauth.env
-            echo "Appended $(wc -l < oauth.env) override line(s) to the server .env."
+               rm -f /tmp/oauth.env" < oauth.env
+            echo "Appended override(s) for: $KEYS"
           else
             echo "No individual override secrets set; relying on BACKEND_ENV."
           fi
