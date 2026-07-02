@@ -134,6 +134,10 @@ private fun RecordingRow(rec: RecordingDto, vm: AppViewModel, onOpen: () -> Unit
                     StatusChip(rec.transcriptStatus)
                     Spacer(Modifier.width(8.dp))
                     Text(fmtDuration(rec.durationSec), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    fmtDate(rec.recordedAt ?: rec.createdAt)?.let {
+                        Spacer(Modifier.width(8.dp))
+                        Text("• $it", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    }
                     rec.folder?.let {
                         Spacer(Modifier.width(8.dp))
                         Text("• ${it.name}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
@@ -173,6 +177,13 @@ private fun RecordingRow(rec: RecordingDto, vm: AppViewModel, onOpen: () -> Unit
         )
     }
 }
+
+/** "29 Jun" (or "29 Jun 2025" for other years) from an ISO timestamp; null if unparseable. */
+private fun fmtDate(iso: String?): String? = runCatching {
+    val d = java.time.LocalDate.parse((iso ?: return null).take(10))
+    val fmt = if (d.year == java.time.LocalDate.now().year) "d MMM" else "d MMM yyyy"
+    d.format(java.time.format.DateTimeFormatter.ofPattern(fmt))
+}.getOrNull()
 
 @Composable
 private fun RowMenuItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, destructive: Boolean = false, onClick: () -> Unit) {

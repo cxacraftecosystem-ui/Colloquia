@@ -27,6 +27,7 @@ class RecordingPlayer(private val exo: ExoPlayer) {
     var positionMs by mutableStateOf(0L); private set
     var durationMs by mutableStateOf(0L); private set
     var buffering by mutableStateOf(false); private set
+    var speed by mutableStateOf(1f); private set
     private var loadedUrl: String? = null
 
     init {
@@ -58,6 +59,18 @@ class RecordingPlayer(private val exo: ExoPlayer) {
 
     fun nudge(deltaMs: Long) = seekTo((exo.currentPosition + deltaMs).coerceAtLeast(0L))
 
+    /** Cycle playback speed 1x → 1.25x → 1.5x → 2x → 0.75x → 1x (podcast-style listening). */
+    fun cycleSpeed() {
+        speed = when (speed) {
+            1f -> 1.25f
+            1.25f -> 1.5f
+            1.5f -> 2f
+            2f -> 0.75f
+            else -> 1f
+        }
+        exo.setPlaybackSpeed(speed)
+    }
+
     fun syncPosition() {
         positionMs = exo.currentPosition.coerceAtLeast(0L)
         if (durationMs <= 0L) durationMs = exo.duration.coerceAtLeast(0L)
@@ -78,10 +91,17 @@ fun rememberRecordingPlayer(): RecordingPlayer {
     return player
 }
 
-/** Compact transport bar shown above the tabs once a recording's audio URL is available. */
+/** Compact transport bar shown above the tabs once a recording's audio URL is available.
+ *  [fallbackDurationMs] (from the recording's metadata) is shown until ExoPlayer knows the real
+ *  duration, so the bar never reads "--:--" for an already-measured recording. */
 @Composable
-fun PlaybackBar(player: RecordingPlayer, audioUrl: String, modifier: Modifier = Modifier) {
-    val total = player.durationMs.coerceAtLeast(0L)
+fun PlaybackBar(
+    player: RecordingPlayer,
+    audioUrl: String,
+    modifier: Modifier = Modifier,
+    fallbackDurationMs: Long = 0L,
+) {
+    val total = (if (player.durationMs > 0) player.durationMs else fallbackDurationMs).coerceAtLeast(0L)
     val pos = player.positionMs.coerceIn(0L, if (total > 0) total else Long.MAX_VALUE)
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -116,6 +136,13 @@ fun PlaybackBar(player: RecordingPlayer, audioUrl: String, modifier: Modifier = 
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { player.ensureLoaded(audioUrl); player.cycleSpeed() }) {
+                    Text(
+                        (if (player.speed % 1f == 0f) "${player.speed.toInt()}" else "${player.speed}") + "x",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
             }
             Slider(
                 value = if (total > 0) pos.toFloat() / total else 0f,

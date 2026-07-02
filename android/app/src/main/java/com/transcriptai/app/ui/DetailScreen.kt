@@ -17,6 +17,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Article
@@ -130,7 +132,11 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
                 Text(fmtDuration(rec.durationSec), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
             audioUrl?.let { url ->
-                PlaybackBar(player, url, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp))
+                PlaybackBar(
+                    player, url,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp),
+                    fallbackDurationMs = (rec.durationSec ?: 0) * 1000L,
+                )
             }
             val tabs = listOf(
                 "Transcript" to Icons.AutoMirrored.Filled.Subject,
@@ -261,24 +267,53 @@ private fun TranscriptTab(vm: AppViewModel, rec: RecordingDto, player: Recording
         } else {
             val filtered = if (query.isBlank()) segments else segments.filter { (it.editedText ?: it.text).contains(query, ignoreCase = true) }
             val canSeek = audioUrl != null
-            LazyColumn(Modifier.fillMaxSize()) {
-                items(filtered, key = { it.idx }) { seg ->
+            if (query.isNotBlank()) {
+                Text(
+                    "${filtered.size} matching segment${if (filtered.size == 1) "" else "s"}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+            val listState = rememberLazyListState()
+            // Keep the currently-playing line on screen while audio plays (only when it scrolled away,
+            // so we never fight the user's own scrolling mid-view).
+            val currentIdx = if (canSeek && player.isPlaying) {
+                filtered.indexOfFirst { player.positionMs >= it.startMs && player.positionMs < it.endMs }
+            } else -1
+            LaunchedEffect(currentIdx) {
+                if (currentIdx >= 0 && listState.layoutInfo.visibleItemsInfo.none { it.index == currentIdx }) {
+                    listState.animateScrollToItem(currentIdx)
+                }
+            }
+            LazyColumn(Modifier.fillMaxSize(), state = listState) {
+                itemsIndexed(filtered, key = { _, s -> s.idx }) { i, seg ->
                     val isCurrent = canSeek && player.positionMs >= seg.startMs && player.positionMs < seg.endMs
+                    // Label the speaker ONCE per turn: only when it differs from the previous segment.
+                    val newSpeaker = seg.speaker != null && (i == 0 || filtered[i - 1].speaker != seg.speaker)
+                    if (newSpeaker) {
+                        if (i > 0) HorizontalDivider(Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                        Text(
+                            seg.speaker!!,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = if (i == 0) 2.dp else 10.dp, bottom = 2.dp),
+                        )
+                    }
                     Row(
                         Modifier.fillMaxWidth()
                             .background(if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
                             .clickable(enabled = canSeek) { audioUrl?.let { player.ensureLoaded(it); player.seekTo(seg.startMs.toLong()) } }
-                            .padding(vertical = 8.dp, horizontal = 4.dp),
+                            .padding(vertical = 6.dp, horizontal = 4.dp),
                     ) {
                         if (showTimestamps) {
-                            Column(Modifier.width(64.dp)) {
-                                Text(
-                                    fmtMs(seg.startMs),
-                                    color = if (canSeek) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                                seg.speaker?.let { Text(it, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold) }
-                            }
+                            Text(
+                                fmtMs(seg.startMs),
+                                color = if (canSeek) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.width(48.dp).padding(top = 3.dp),
+                            )
                             Spacer(Modifier.width(8.dp))
                         }
                         Text(seg.editedText ?: seg.text, Modifier.weight(1f))
@@ -286,7 +321,6 @@ private fun TranscriptTab(vm: AppViewModel, rec: RecordingDto, player: Recording
                             Icon(Icons.Default.Edit, "Edit", modifier = Modifier.size(16.dp))
                         }
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
                 }
                 item { Spacer(Modifier.height(40.dp)) }
             }
@@ -492,7 +526,11 @@ private fun ChatTab(vm: AppViewModel, rec: RecordingDto) {
                     Surface(
                         color = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
                         shape = MaterialTheme.shapes.medium,
-                    ) { Text(m.content, Modifier.padding(10.dp)) }
+                    ) {
+                        // Assistant answers often contain Markdown (bullets, bold) — render it richly.
+                        if (isUser) Text(m.content, Modifier.padding(10.dp))
+                        else MarkdownText(m.content, Modifier.padding(10.dp))
+                    }
                 }
             }
         }

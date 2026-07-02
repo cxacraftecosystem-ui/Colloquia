@@ -19,11 +19,27 @@ def _fmt_ms(ms: int) -> str:
 
 
 def _segments_markdown(segments: list[Any]) -> str:
-    lines = []
+    """Group consecutive same-speaker segments into one labelled paragraph (the label appears once per
+    speaker TURN, not once per segment — mirrors the app's transcript view)."""
+    blocks: list[str] = []
+    current: str | None = None
+    buf: list[str] = []
+
+    def _flush() -> None:
+        if buf:
+            label = f"**{current}:** " if current else ""
+            blocks.append(label + " ".join(buf))
+
+    started = False
     for s in segments:
-        speaker = f"**{s.speaker}:** " if s.speaker else ""
-        lines.append(f"{speaker}{s.editedText or s.text}")
-    return "\n\n".join(lines)
+        if not started or s.speaker != current:
+            _flush()
+            buf = []
+            current = s.speaker
+            started = True
+        buf.append(str(s.editedText or s.text).strip())
+    _flush()
+    return "\n\n".join(blocks)
 
 
 def _conversation_sections(recording: Any, transcript: Any, segments: list[Any]) -> list[tuple[str, str]]:
