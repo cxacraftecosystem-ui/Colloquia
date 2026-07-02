@@ -63,16 +63,23 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
             runCatching { audioUrl = vm.repo.api.getAudioUrl(rec.id).url }
         }
     }
-    // While transcription is in flight, poll so the transcript/summary appear automatically (no manual
-    // refresh). The effect is keyed on the status, so it stops as soon as the recording is done.
-    LaunchedEffect(rec?.transcriptStatus) {
+    // Poll while work is still landing server-side, so everything appears without a manual refresh:
+    // 1) while TRANSCRIPTION is in flight (unbounded — it ends in a terminal status), and then
+    // 2) while the chained ANALYSIS pass hasn't filled in the summary/actions/conversation yet
+    //    (bounded to ~3 minutes so an out-of-quota backend doesn't keep the screen polling forever).
+    LaunchedEffect(rec?.id, rec?.transcriptStatus) {
         val pending = setOf("QUEUED", "PROCESSING", "PENDING")
-        if (rec != null && rec.transcriptStatus.uppercase() in pending) {
-            while (true) {
-                kotlinx.coroutines.delay(5000)
-                vm.loadDetail(id)
-                if (vm.detail?.transcriptStatus?.uppercase() !in pending) break
-            }
+        var analysisPolls = 0
+        while (true) {
+            val r = vm.detail ?: break
+            val transcribing = r.transcriptStatus.uppercase() in pending
+            val analysisMissing = r.transcriptStatus.uppercase() == "COMPLETED" &&
+                r.summaries.isEmpty() && r.actionItems.isEmpty() &&
+                r.transcript?.refinedText.isNullOrBlank()
+            if (!transcribing && (!analysisMissing || analysisPolls >= 36)) break
+            if (!transcribing) analysisPolls++
+            kotlinx.coroutines.delay(5000)
+            vm.loadDetail(id)
         }
     }
 

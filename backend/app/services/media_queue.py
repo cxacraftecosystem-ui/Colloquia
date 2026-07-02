@@ -356,6 +356,11 @@ async def _run_analysis(job: Any, settings: Settings) -> None:
     status = str(res.get("status") or "").upper()
     if status == RATE_LIMITED:
         raise RateLimited(res.get("retryAfter"))
+    if status == "QUOTA":
+        # Out of OpenAI credits. This is (hopefully) temporary — park the job and probe again every
+        # 15 minutes WITHOUT consuming attempts, so every recording's analysis completes automatically
+        # the moment billing/credits are fixed. No re-transcribe needed.
+        raise RateLimited(900)
     if status != COMPLETED or not isinstance(res.get("data"), dict):
         await _complete_job(job.id, {"status": status or FAILED, "message": res.get("message")})
         return
