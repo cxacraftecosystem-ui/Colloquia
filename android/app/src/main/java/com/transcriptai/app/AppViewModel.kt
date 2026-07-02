@@ -319,7 +319,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     AudioExtract.extractAudio(source, File(appCtx.cacheDir, "imports")).also { source.delete() }
                 }
             } else source
-            val created = repo.uploadRecording(toUpload, durationSec = 0, title = title, mimeType = "audio/m4a")
+            // Use the file's REAL mime type: mislabelling (e.g. a .wav sent as audio/m4a) skews the
+            // transcription provider's content-type handling and in-app playback headers.
+            val mime = if (isVideo) "audio/m4a" else when (toUpload.extension.lowercase()) {
+                "mp3" -> "audio/mpeg"
+                "wav" -> "audio/wav"
+                "ogg", "oga" -> "audio/ogg"
+                "flac" -> "audio/flac"
+                "aac" -> "audio/aac"
+                "opus" -> "audio/opus"
+                "amr" -> "audio/amr"
+                else -> "audio/m4a"
+            }
+            val created = repo.uploadRecording(toUpload, durationSec = 0, title = title, mimeType = mime)
             pendingUploads = repo.pendingCount()
             if (created != null) {
                 Notifications.notify(appCtx, toUpload.hashCode(), "Uploaded", "“$title” is transcribing…")
