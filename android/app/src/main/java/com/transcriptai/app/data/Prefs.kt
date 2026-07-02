@@ -23,9 +23,10 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("notifications", true)
         set(v) = sp.edit().putBoolean("notifications", v).apply()
 
-    /** Show inline timestamps (and speaker labels) on each transcript line. */
+    /** Show per-segment timestamps in the transcript. OFF (default) amalgamates each speaker's
+     *  consecutive segments into one flowing paragraph; ON shows each timed segment on its own line. */
     var showTimestamps: Boolean
-        get() = sp.getBoolean("show_timestamps", true)
+        get() = sp.getBoolean("show_timestamps", false)
         set(v) = sp.edit().putBoolean("show_timestamps", v).apply()
 
     var darkMode: Boolean?

@@ -115,8 +115,10 @@ fun IntegrationsScreen(vm: AppViewModel, nav: NavController) {
     }
 
     connecting?.let { provider ->
-        var value by remember { mutableStateOf("") }
-        val needsWebhook = provider.key in listOf("SLACK", "TEAMS", "WEBHOOK")
+        // Every provider gets EXACTLY the fields its connector needs (Notion/Trello/Jira need more
+        // than one — a single token box could never fully configure them).
+        val fields = CONFIG_FIELDS[provider.key] ?: listOf("webhookUrl" to "Webhook URL")
+        val values = remember(provider.key) { mutableStateMapOf<String, String>() }
         val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
         AlertDialog(
             onDismissRequest = { connecting = null },
@@ -125,29 +127,30 @@ fun IntegrationsScreen(vm: AppViewModel, nav: NavController) {
             text = {
                 Column {
                     Text(
-                        if (needsWebhook) "Paste the incoming webhook URL from ${provider.name} — one tap below grabs it from your clipboard."
-                        else "Paste your ${provider.name} API token — one tap below grabs it from your clipboard.",
+                        CONNECT_HINTS[provider.key] ?: "Enter the ${provider.name} settings below.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = value,
-                        onValueChange = { value = it },
-                        singleLine = true,
-                        label = { Text(if (needsWebhook) "Webhook URL" else "API token") },
-                        modifier = Modifier.fillMaxWidth(),
-                        trailingIcon = {
-                            TextButton(onClick = { clipboard.getText()?.text?.let { value = it } }) { Text("Paste") }
-                        },
-                    )
+                    Spacer(Modifier.height(10.dp))
+                    fields.forEach { (key, label) ->
+                        OutlinedTextField(
+                            value = values[key] ?: "",
+                            onValueChange = { values[key] = it },
+                            singleLine = true,
+                            label = { Text(label) },
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            trailingIcon = {
+                                TextButton(onClick = { clipboard.getText()?.text?.let { values[key] = it.trim() } }) { Text("Paste") }
+                            },
+                        )
+                    }
                 }
             },
             confirmButton = {
                 Button(
-                    enabled = value.isNotBlank(),
+                    enabled = fields.all { (k, _) -> !values[k].isNullOrBlank() },
                     onClick = {
-                        val cfg = if (needsWebhook) mapOf("webhookUrl" to value) else mapOf("token" to value)
-                        vm.connectIntegration(provider.key, cfg); connecting = null
+                        vm.connectIntegration(provider.key, fields.associate { (k, _) -> k to (values[k] ?: "").trim() })
+                        connecting = null
                     },
                 ) { Text("Save") }
             },
@@ -155,6 +158,30 @@ fun IntegrationsScreen(vm: AppViewModel, nav: NavController) {
         )
     }
 }
+
+// The exact config each outbound connector requires (mirrors backend services/integrations.py).
+private val CONFIG_FIELDS: Map<String, List<Pair<String, String>>> = mapOf(
+    "SLACK" to listOf("webhookUrl" to "Incoming webhook URL"),
+    "TEAMS" to listOf("webhookUrl" to "Incoming webhook URL"),
+    "WEBHOOK" to listOf("webhookUrl" to "Webhook URL"),
+    "NOTION" to listOf("token" to "Integration token", "databaseId" to "Database ID"),
+    "TRELLO" to listOf("key" to "API key", "token" to "API token", "idList" to "List ID"),
+    "JIRA" to listOf(
+        "baseUrl" to "Site URL (https://you.atlassian.net)",
+        "email" to "Account email",
+        "apiToken" to "API token",
+        "projectKey" to "Project key",
+    ),
+)
+
+private val CONNECT_HINTS: Map<String, String> = mapOf(
+    "SLACK" to "Create an incoming webhook in Slack (App settings → Incoming Webhooks) and paste its URL.",
+    "TEAMS" to "Add an Incoming Webhook connector to your Teams channel and paste its URL.",
+    "WEBHOOK" to "Summaries and action items will be POSTed as JSON to this URL.",
+    "NOTION" to "Create an internal integration at notion.so/my-integrations, share your database with it, and paste the token + database ID.",
+    "TRELLO" to "Get your key and token from trello.com/power-ups/admin, and the list ID from the board (the list your cards should land in).",
+    "JIRA" to "Use your Atlassian site URL, account email, an API token (id.atlassian.com), and the project key (e.g. PROJ).",
+)
 
 @Composable
 private fun SectionHeader(text: String) {

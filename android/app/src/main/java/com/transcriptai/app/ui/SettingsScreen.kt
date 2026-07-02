@@ -86,7 +86,7 @@ fun SettingsScreen(vm: AppViewModel, nav: NavController) {
             }
 
             SectionTitle("Transcript display")
-            SettingRow("Show timestamps", "Display the time (and speaker) on each line") {
+            SettingRow("Show timestamps", "On: each timed line separately. Off: one flowing paragraph per speaker") {
                 Switch(checked = vm.showTimestamps, onCheckedChange = { vm.saveShowTimestamps(it) })
             }
 

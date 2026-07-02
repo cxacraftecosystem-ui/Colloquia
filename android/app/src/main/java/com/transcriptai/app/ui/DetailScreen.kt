@@ -50,12 +50,14 @@ import java.io.File
 fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    LaunchedEffect(id) { vm.loadDetail(id); vm.loadChat(id) }
+    LaunchedEffect(id) { vm.loadDetail(id); vm.loadChat(id); vm.loadIntegrations() }
     val rec = vm.detail
     var tab by remember { mutableStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
     var renameOpen by remember { mutableStateOf(false) }
     var renameSpeakersOpen by remember { mutableStateOf(false) }
+    var sendToOpen by remember { mutableStateOf(false) }
+    var pushResult by remember { mutableStateOf<String?>(null) }
 
     // In-app playback (private bucket -> short-lived presigned URL fetched once).
     val player = rememberRecordingPlayer()
@@ -106,6 +108,7 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
                             MenuItem(if (rec.isArchived) "Unarchive" else "Archive", Icons.Default.Archive) { menuOpen = false; vm.toggleArchive(rec.id) }
                             MenuItem("Regenerate title (AI)", Icons.Default.AutoAwesome) { menuOpen = false; vm.regenerateTitle(rec.id) }
                             MenuItem("Re-transcribe", Icons.Default.Refresh) { menuOpen = false; vm.transcribeNow(rec.id) }
+                            MenuItem("Send to connection", Icons.AutoMirrored.Filled.Send) { menuOpen = false; sendToOpen = true }
                             HorizontalDivider()
                             MenuItem("Copy transcript", Icons.Default.ContentCopy) { menuOpen = false; copyText(context, transcriptText(rec)) }
                             MenuItem("Share transcript", Icons.Default.Share) { menuOpen = false; shareText(context, transcriptText(rec)) }
@@ -177,6 +180,55 @@ fun DetailScreen(vm: AppViewModel, nav: NavController, id: String) {
             text = { OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true) },
             confirmButton = { TextButton(onClick = { rec?.let { vm.rename(it.id, newName) }; renameOpen = false }) { Text("Save") } },
             dismissButton = { TextButton(onClick = { renameOpen = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (sendToOpen && rec != null) {
+        AlertDialog(
+            onDismissRequest = { sendToOpen = false; pushResult = null },
+            title = { Text("Send to connection") },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    if (vm.integrations.isEmpty()) {
+                        Text("No connections yet. Add one from Library → Connections.")
+                    } else {
+                        Text(
+                            "Pushes the title, brief summary and action items.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        vm.integrations.forEach { integ ->
+                            val nice = integ.provider.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .clickable {
+                                        pushResult = "Sending to $nice…"
+                                        vm.pushRecording(rec.id, integ.provider) { st ->
+                                            pushResult = when (st.uppercase()) {
+                                                "SENT" -> "Sent to $nice ✓"
+                                                "NEEDS_CONFIG" -> "$nice is missing settings — reconnect it with all fields."
+                                                else -> "$nice: $st"
+                                            }
+                                        }
+                                    }
+                                    .padding(vertical = 12.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.Send, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Text(nice)
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                        }
+                    }
+                    pushResult?.let {
+                        Spacer(Modifier.height(10.dp))
+                        Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { sendToOpen = false; pushResult = null }) { Text("Done") } },
         )
     }
 
@@ -276,10 +328,25 @@ private fun TranscriptTab(vm: AppViewModel, rec: RecordingDto, player: Recording
                 )
             }
             val listState = rememberLazyListState()
+            // Amalgamated view (timestamps off): consecutive same-speaker segments merge into ONE
+            // flowing paragraph per speaker turn instead of scattering across many short lines.
+            val turns = remember(filtered) {
+                val out = mutableListOf<TurnGroup>()
+                for (s in filtered) {
+                    val last = out.lastOrNull()
+                    if (last != null && last.speaker == s.speaker) {
+                        last.texts.add(s.editedText ?: s.text); last.endMs = s.endMs
+                    } else {
+                        out.add(TurnGroup(s.speaker, s.startMs, s.endMs, mutableListOf(s.editedText ?: s.text)))
+                    }
+                }
+                out
+            }
             // Keep the currently-playing line on screen while audio plays (only when it scrolled away,
             // so we never fight the user's own scrolling mid-view).
             val currentIdx = if (canSeek && player.isPlaying) {
-                filtered.indexOfFirst { player.positionMs >= it.startMs && player.positionMs < it.endMs }
+                if (showTimestamps) filtered.indexOfFirst { player.positionMs >= it.startMs && player.positionMs < it.endMs }
+                else turns.indexOfFirst { player.positionMs >= it.startMs && player.positionMs < it.endMs }
             } else -1
             LaunchedEffect(currentIdx) {
                 if (currentIdx >= 0 && listState.layoutInfo.visibleItemsInfo.none { it.index == currentIdx }) {
@@ -287,27 +354,27 @@ private fun TranscriptTab(vm: AppViewModel, rec: RecordingDto, player: Recording
                 }
             }
             LazyColumn(Modifier.fillMaxSize(), state = listState) {
-                itemsIndexed(filtered, key = { _, s -> s.idx }) { i, seg ->
-                    val isCurrent = canSeek && player.positionMs >= seg.startMs && player.positionMs < seg.endMs
-                    // Label the speaker ONCE per turn: only when it differs from the previous segment.
-                    val newSpeaker = seg.speaker != null && (i == 0 || filtered[i - 1].speaker != seg.speaker)
-                    if (newSpeaker) {
-                        if (i > 0) HorizontalDivider(Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-                        Text(
-                            seg.speaker!!,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = if (i == 0) 2.dp else 10.dp, bottom = 2.dp),
-                        )
-                    }
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .background(if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
-                            .clickable(enabled = canSeek) { audioUrl?.let { player.ensureLoaded(it); player.seekTo(seg.startMs.toLong()) } }
-                            .padding(vertical = 6.dp, horizontal = 4.dp),
-                    ) {
-                        if (showTimestamps) {
+                if (showTimestamps) {
+                    itemsIndexed(filtered, key = { _, s -> s.idx }) { i, seg ->
+                        val isCurrent = canSeek && player.positionMs >= seg.startMs && player.positionMs < seg.endMs
+                        // Label the speaker ONCE per turn: only when it differs from the previous segment.
+                        val newSpeaker = seg.speaker != null && (i == 0 || filtered[i - 1].speaker != seg.speaker)
+                        if (newSpeaker) {
+                            if (i > 0) HorizontalDivider(Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                            Text(
+                                seg.speaker!!,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = if (i == 0) 2.dp else 10.dp, bottom = 2.dp),
+                            )
+                        }
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .background(if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
+                                .clickable(enabled = canSeek) { audioUrl?.let { player.ensureLoaded(it); player.seekTo(seg.startMs.toLong()) } }
+                                .padding(vertical = 6.dp, horizontal = 4.dp),
+                        ) {
                             Text(
                                 fmtMs(seg.startMs),
                                 color = if (canSeek) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -315,10 +382,36 @@ private fun TranscriptTab(vm: AppViewModel, rec: RecordingDto, player: Recording
                                 modifier = Modifier.width(48.dp).padding(top = 3.dp),
                             )
                             Spacer(Modifier.width(8.dp))
+                            Text(seg.editedText ?: seg.text, Modifier.weight(1f))
+                            IconButton(onClick = { editing = seg }, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.Edit, "Edit", modifier = Modifier.size(16.dp))
+                            }
                         }
-                        Text(seg.editedText ?: seg.text, Modifier.weight(1f))
-                        IconButton(onClick = { editing = seg }, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Edit, "Edit", modifier = Modifier.size(16.dp))
+                    }
+                } else {
+                    // Timestamps off: one clean paragraph per speaker turn (tap a turn to play from its
+                    // start; the playing turn highlights). Turn timestamps on to edit individual lines.
+                    itemsIndexed(turns) { i, t ->
+                        val isCurrent = canSeek && player.positionMs >= t.startMs && player.positionMs < t.endMs
+                        Column(
+                            Modifier.fillMaxWidth()
+                                .background(if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
+                                .clickable(enabled = canSeek) { audioUrl?.let { player.ensureLoaded(it); player.seekTo(t.startMs.toLong()) } }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                        ) {
+                            t.speaker?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(bottom = 3.dp),
+                                )
+                            }
+                            Text(t.texts.joinToString(" "))
+                        }
+                        if (i < turns.size - 1) {
+                            HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                         }
                     }
                 }
@@ -557,6 +650,9 @@ private fun ScrollableTabRowChips(types: List<String>, selected: String, onSelec
         }
     }
 }
+
+/** Consecutive same-speaker segments merged into one paragraph for the amalgamated transcript view. */
+private class TurnGroup(val speaker: String?, val startMs: Int, var endMs: Int, val texts: MutableList<String>)
 
 // --- helpers -------------------------------------------------------------
 

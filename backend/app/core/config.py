@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="text-embedding-3-small", alias="OPENAI_EMBEDDING_MODEL")
     # Optional diarization provider key (e.g. Deepgram). Absent -> chat-model labelling is used.
     deepgram_api_key: str | None = Field(default=None, alias="DEEPGRAM_API_KEY")
+    # nova-3 + language=multi transcribes CODE-SWITCHING multilingual audio (en/es/fr/de/hi/ru/pt/ja/
+    # it/nl) with per-utterance language tags — verified available on this key. If the plan ever loses
+    # nova-3, the code falls back to nova-2 + detect_language, then the account default, automatically.
+    deepgram_model: str = Field(default="nova-3", alias="DEEPGRAM_MODEL")
+    deepgram_language: str = Field(default="multi", alias="DEEPGRAM_LANGUAGE")
     # FCM HTTP v1 (the legacy server key is decommissioned). Point this at a Firebase service-account
     # JSON file; the backend mints a short-lived OAuth token from it per send. Absent -> tokens are
     # stored but no push is sent (graceful no-op).

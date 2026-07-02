@@ -298,16 +298,56 @@ def _transcribe_sync(
     }
 
 
+def _deepgram_param_sets(settings: Settings) -> list[dict[str, str]]:
+    """Ordered Deepgram parameter attempts, best first. nova-3 + language=multi = true multilingual
+    CODE-SWITCHING transcription (per-utterance language tags). If the account/model rejects a set with
+    a 4xx, the caller falls through to the next: nova-2 + detect_language (single-language, any of ~40
+    languages, auto-detected), then the account default (legacy behaviour)."""
+    base = {"diarize": "true", "punctuate": "true", "utterances": "true", "smart_format": "true"}
+    sets = [{**base, "model": settings.deepgram_model, "language": settings.deepgram_language}]
+    if settings.deepgram_model != "nova-2":
+        sets.append({**base, "model": "nova-2", "detect_language": "true"})
+    sets.append(dict(base))
+    return sets
+
+
+def _deepgram_language(payload: dict[str, Any]) -> str | None:
+    """Best-effort dominant language from a Deepgram response: channel detected_language
+    (detect_language mode) or the majority of per-utterance language tags (language=multi mode)."""
+    results = payload.get("results", {})
+    channel = (results.get("channels") or [{}])[0]
+    if channel.get("detected_language"):
+        return str(channel["detected_language"])
+    counts: dict[str, int] = {}
+    for u in results.get("utterances") or []:
+        for lang in u.get("languages") or []:
+            counts[str(lang)] = counts.get(str(lang), 0) + 1
+    return max(counts, key=counts.get) if counts else None
+
+
 def _post_deepgram(content: bytes, mime_type: str, settings: Settings) -> dict[str, Any]:
-    """Deepgram prerecorded transcription WITH true acoustic diarization (diarize=true). Returns the
-    same shape as the Whisper path but each segment carries a real `speaker` label."""
-    response = _request_with_retry(lambda: requests.post(
-        "https://api.deepgram.com/v1/listen",
-        params={"diarize": "true", "punctuate": "true", "utterances": "true", "smart_format": "true"},
-        headers={"Authorization": f"Token {settings.deepgram_api_key}", "Content-Type": mime_type or "audio/m4a"},
-        data=content,
-        timeout=300,
-    ))
+    """Deepgram prerecorded transcription with TRUE acoustic diarization AND multilingual support
+    (nova-3 `language=multi` handles code-switching; falls back per _deepgram_param_sets). Returns the
+    same shape as the Whisper path but each segment carries a real `speaker` label + the language."""
+    param_sets = _deepgram_param_sets(settings)
+    response = None
+    for i, params in enumerate(param_sets):
+        try:
+            response = _request_with_retry(lambda p=params: requests.post(
+                "https://api.deepgram.com/v1/listen",
+                params=p,
+                headers={"Authorization": f"Token {settings.deepgram_api_key}", "Content-Type": mime_type or "audio/m4a"},
+                data=content,
+                timeout=300,
+            ))
+            break
+        except requests.HTTPError as exc:
+            code = exc.response.status_code if exc.response is not None else None
+            # 4xx = this model/language combo isn't available to the account — try the next set.
+            if code in {400, 403, 404} and i < len(param_sets) - 1:
+                logger.info("Deepgram rejected params %s (HTTP %s); trying fallback set", params, code)
+                continue
+            raise
     payload = response.json()
     results = payload.get("results", {})
     utterances = results.get("utterances") or []
@@ -334,6 +374,7 @@ def _post_deepgram(content: bytes, mime_type: str, settings: Settings) -> dict[s
         "status": "COMPLETED" if text else "EMPTY",
         "text": text,
         "segments": segments,
+        "language": _deepgram_language(payload),
         "provider": "deepgram",
     }
 
