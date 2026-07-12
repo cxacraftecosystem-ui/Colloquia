@@ -8,6 +8,7 @@ from datetime import datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.core.config import Settings, get_settings
 from app.core.db import db
 
 SINGLETON_ID = "singleton"
@@ -30,6 +31,28 @@ async def get_or_create_app_settings(updated_by_id: str | None = None) -> Any:
     if existing is not None:
         return existing
     return await db.appsetting.create(data={"id": SINGLETON_ID, "updatedById": updated_by_id})
+
+
+async def resolve_settings(base: Settings | None = None) -> Settings:
+    """Return the effective Settings with any master-admin provider-key OVERRIDES from the AppSetting
+    row overlaid on top of the env-based config. This lets an operator rotate the Deepgram/OpenAI key
+    at runtime (via the DB) with no redeploy — the queue worker and AI routes pick it up on their next
+    drain/request. Falls back to the env keys when no override is stored (or on any settings error)."""
+    base = base or get_settings()
+    try:
+        row = await load_app_settings()
+    except Exception:  # noqa: BLE001 - never let settings resolution break the AI path
+        return base
+    if row is None:
+        return base
+    updates: dict[str, Any] = {}
+    deepgram = getattr(row, "deepgramApiKey", None)
+    openai = getattr(row, "openaiApiKey", None)
+    if deepgram:
+        updates["deepgram_api_key"] = deepgram
+    if openai:
+        updates["openai_api_key"] = openai
+    return base.model_copy(update=updates) if updates else base
 
 
 def transcription_mode(row: Any | None) -> str:

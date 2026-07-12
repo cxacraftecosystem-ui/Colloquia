@@ -168,6 +168,9 @@ jobs:
           if [ -f prisma/alter_transcript_translated.sql ]; then
             PATH="$PWD/.venv/bin:$PATH" ./.venv/bin/python -m prisma db execute --schema=prisma/schema.prisma --file prisma/alter_transcript_translated.sql || true
           fi
+          if [ -f prisma/alter_appsetting_keys.sql ]; then
+            PATH="$PWD/.venv/bin:$PATH" ./.venv/bin/python -m prisma db execute --schema=prisma/schema.prisma --file prisma/alter_appsetting_keys.sql || true
+          fi
 
           sudo systemctl restart colloquia
           sudo systemctl restart colloquia-queue

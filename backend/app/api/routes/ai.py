@@ -3,11 +3,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 
-from app.core.config import get_settings
 from app.core.db import db
 from app.core.deps import assert_owns, get_current_user
 from app.schemas.records import ChatRequest, SummaryRegenerate, TransformRequest
 from app.services import ai as ai_service
+from app.services.app_settings import resolve_settings
 
 router = APIRouter(prefix="/recordings", tags=["ai"])
 
@@ -77,7 +77,7 @@ async def regenerate_summary(recording_id: str, payload: SummaryRegenerate, curr
     if stype not in VALID_SUMMARY_TYPES:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid summary type")
     text = await _transcript_text(recording_id)
-    res = await ai_service.summarize(text, stype, get_settings())
+    res = await ai_service.summarize(text, stype, await resolve_settings())
     _ensure_ai_ok(res)
     summary = await db.summary.upsert(
         where={"recordingId_type": {"recordingId": recording_id, "type": stype}},
@@ -129,7 +129,7 @@ async def chat(recording_id: str, payload: ChatRequest, current_user: Any = Depe
     history = [{"role": r.role.value.lower() if hasattr(r.role, "value") else str(r.role).lower(), "content": r.content} for r in history_rows]
 
     await db.chatmessage.create(data={"recordingId": recording_id, "role": "USER", "content": payload.question})
-    res = await ai_service.chat_over_transcript(text, history, payload.question, get_settings())
+    res = await ai_service.chat_over_transcript(text, history, payload.question, await resolve_settings())
     _ensure_ai_ok(res)
     msg = await db.chatmessage.create(
         data={"recordingId": recording_id, "role": "ASSISTANT", "content": res["answer"]}
@@ -143,7 +143,7 @@ async def chat(recording_id: str, payload: ChatRequest, current_user: Any = Depe
 async def regenerate_title(recording_id: str, current_user: Any = Depends(get_current_user)) -> dict[str, Any]:
     await _owned(recording_id, current_user)
     text = await _transcript_text(recording_id)
-    res = await ai_service.generate_title(text, get_settings())
+    res = await ai_service.generate_title(text, await resolve_settings())
     _ensure_ai_ok(res)
     if res.get("title"):
         await db.recording.update(where={"id": recording_id}, data={"aiTitle": res["title"]})
@@ -155,7 +155,7 @@ async def translate(recording_id: str, payload: TransformRequest, current_user: 
     await _owned(recording_id, current_user)
     text = await _transcript_text(recording_id)
     lang = payload.targetLanguage or "English"
-    return _ensure_ai_ok(await ai_service.transform_text(text, f"Translate the transcript into {lang}. Keep speaker labels.", get_settings()))
+    return _ensure_ai_ok(await ai_service.transform_text(text, f"Translate the transcript into {lang}. Keep speaker labels.", await resolve_settings()))
 
 
 @router.post("/{recording_id}/rewrite")
@@ -163,7 +163,7 @@ async def rewrite(recording_id: str, payload: TransformRequest, current_user: An
     await _owned(recording_id, current_user)
     text = await _transcript_text(recording_id)
     instruction = payload.instruction or "Rewrite the transcript as clean, well-structured prose."
-    return _ensure_ai_ok(await ai_service.transform_text(text, instruction, get_settings()))
+    return _ensure_ai_ok(await ai_service.transform_text(text, instruction, await resolve_settings()))
 
 
 @router.post("/{recording_id}/tone")
@@ -171,7 +171,7 @@ async def convert_tone(recording_id: str, payload: TransformRequest, current_use
     await _owned(recording_id, current_user)
     text = await _transcript_text(recording_id)
     tone = payload.tone or "professional"
-    return _ensure_ai_ok(await ai_service.transform_text(text, f"Rewrite the transcript content in a {tone} tone.", get_settings()))
+    return _ensure_ai_ok(await ai_service.transform_text(text, f"Rewrite the transcript content in a {tone} tone.", await resolve_settings()))
 
 
 @router.post("/{recording_id}/custom")
@@ -180,4 +180,4 @@ async def custom_prompt(recording_id: str, payload: TransformRequest, current_us
     if not payload.instruction:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="instruction required")
     text = await _transcript_text(recording_id)
-    return _ensure_ai_ok(await ai_service.transform_text(text, payload.instruction, get_settings()))
+    return _ensure_ai_ok(await ai_service.transform_text(text, payload.instruction, await resolve_settings()))

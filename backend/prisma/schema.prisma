@@ -283,6 +283,10 @@ model AppSetting {
   batchWindowStart   String  @default("02:00")
   batchWindowEnd     String  @default("05:00")
   batchTimezone      String  @default("Asia/Kolkata")
+  // Runtime provider-key OVERRIDES (master-admin). When set, these win over the env-based keys so an
+  // operator can rotate the Deepgram/OpenAI key without a redeploy or server access. Null => use env.
+  deepgramApiKey     String?
+  openaiApiKey       String?
   updatedById        String?
 
   updatedAt DateTime @updatedAt

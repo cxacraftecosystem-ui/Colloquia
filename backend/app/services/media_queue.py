@@ -23,6 +23,7 @@ from app.services.ai import (
 )
 from app.services.app_settings import (
     load_app_settings,
+    resolve_settings,
     transcription_mode,
     within_processing_window,
 )
@@ -226,6 +227,7 @@ async def _process_job(job: Any, settings: Settings) -> None:
 
 async def _run_transcription(job: Any, settings: Settings) -> None:
     recording = job.recording
+    settings = await resolve_settings(settings)  # overlay any runtime DB key overrides
     await db.recording.update(
         where={"id": recording.id},
         data={"transcriptStatus": PROCESSING, "status": PROCESSING},
@@ -343,6 +345,7 @@ async def _store_transcript(recording: Any, result: dict[str, Any], settings: Se
 
 async def _run_analysis(job: Any, settings: Settings) -> None:
     recording = job.recording
+    settings = await resolve_settings(settings)  # overlay any runtime DB key overrides
     transcript = await db.transcript.find_unique(where={"recordingId": recording.id})
     raw_text = (transcript.rawText or "") if transcript else ""
     if not raw_text.strip():
@@ -467,7 +470,7 @@ async def _store_extractions(recording_id: str, data: dict[str, Any]) -> None:
 async def transcribe_recording_now(recording: Any, settings: Settings | None = None) -> dict[str, Any]:
     """Force a transcription immediately (bypassing the queue + off-peak window), then run analysis.
     Mirrors the worker path so manual and queued runs agree. Never raises on AI failure."""
-    settings = settings or get_settings()
+    settings = await resolve_settings(settings)  # overlay any runtime DB key overrides
     content = await asyncio.to_thread(get_object_bytes, recording.objectKey)
     await db.recording.update(
         where={"id": recording.id}, data={"transcriptStatus": PROCESSING, "status": PROCESSING}

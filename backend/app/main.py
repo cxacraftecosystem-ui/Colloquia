@@ -122,11 +122,12 @@ def create_app() -> FastAPI:
     @app.get("/health/ai", tags=["health"])
     async def health_ai() -> dict[str, Any]:
         """Whether the configured OpenAI key can actually be used right now (sanitized; never the key).
-        `available: false` with errorCode `insufficient_quota` => the OpenAI account is out of credits."""
-        from app.core.config import get_settings
+        `available: false` with errorCode `insufficient_quota` => the OpenAI account is out of credits.
+        Honours the runtime DB key override so it reflects what the queue/routes actually use."""
         from app.services.ai import ai_healthcheck
+        from app.services.app_settings import resolve_settings
 
-        return await ai_healthcheck(get_settings())
+        return await ai_healthcheck(await resolve_settings())
 
     app.include_router(api_router)
     app.include_router(live_router)  # WebSocket: /api/live/transcribe
