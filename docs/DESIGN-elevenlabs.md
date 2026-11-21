@@ -252,6 +252,34 @@ components:
     typography: "{typography.body-sm}"
 ---
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="readme-kit/assets/divider-dark.svg">
+  <img src="readme-kit/assets/divider-light.svg" width="100%" alt="">
+</picture>
+
+# <img src="readme-kit/assets/icons/palette.svg" width="32" align="top" alt="">&nbsp; ElevenLabs design analysis
+
+A design analysis of the ElevenLabs marketing pages: the tokens are in the front matter at the top of
+this file, the reasoning below. The Android app's theme follows it in
+`android/app/src/main/java/com/transcriptai/app/ui/Theme.kt`: the same canvas, ink, body, muted,
+hairline, surface and gradient values, EB Garamond as the documented substitute for Waldenburg Light,
+and Inter for text, both bundled in `android/app/src/main/res/font`. The launcher icon's background
+uses the lavender and sky gradient orbs.
+
+| Section | What it covers |
+|---|---|
+| [Overview](#overview) | the voice of the brand and its key characteristics |
+| [Colors](#colors) | ink, surfaces, hairlines, text, the gradient stops, semantic colours |
+| [Typography](#typography) | Waldenburg Light and Inter, the type scale and its principles |
+| [Layout](#layout) | spacing, grid and whitespace |
+| [Elevation & Depth](#elevation--depth) | hairlines, one soft shadow, gradient orbs |
+| [Shapes](#shapes) | the radius scale |
+| [Components](#components) | navigation, buttons, hero, cards, voice rows, pricing, forms, footer |
+| [Do's and Don'ts](#dos-and-donts) | the rules in short |
+| [Responsive Behavior](#responsive-behavior) | breakpoints, touch targets, collapsing |
+| [Iteration Guide](#iteration-guide) | how to extend it |
+| [Known Gaps](#known-gaps) | what the analysis could not capture |
+
 ## Overview
 
 ElevenLabs reads like a quietly editorial print magazine that happens to be a voice-AI product. The base canvas is off-white `{colors.canvas}` (#f5f5f5) holding warm near-black ink `{colors.ink}` (#0c0a09). The brand voltage is **photographic, not chromatic**: soft pastel atmospheric gradient orbs (mint, peach, lavender, sky, rose) drift through the page as the only "color" moments. There is no neon accent, no saturated CTA color, no dark-canvas dev-tools atmosphere.
@@ -502,3 +530,8 @@ The system uses **hairline + soft drop**. Cards float above the off-white canvas
 - Animation timings (orb drift, waveform pulse, hero entrance) out of scope.
 - In-product surfaces (voice library editor, agent playground) only partially captured via marketing mockups.
 - Form validation states beyond focus not visible on captured surfaces.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="readme-kit/assets/footer-dark.svg">
+  <img src="readme-kit/assets/footer-light.svg" width="100%" alt="Every voice in the room, kept and put to work. Colloquia: Kotlin and Compose, FastAPI, Deepgram, OpenAI.">
+</picture>

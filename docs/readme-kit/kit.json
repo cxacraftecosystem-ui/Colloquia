@@ -1,0 +1,59 @@
+{
+  "hero": {
+    "eyebrow": "Record · transcribe · act",
+    "name": "Colloquia",
+    "tagline": "Record a conversation on Android and get back who said what, a clean transcript, a summary and action items, then send them to Calendar, Tasks, Slack or Jira.",
+    "chips": ["Kotlin + Compose", "FastAPI", "Deepgram nova-3", "gpt-4o-mini", "AWS + Supabase"],
+    "motifCaption": "speak · transcribe · act",
+    "label": "Colloquia: record a conversation on Android and get a speaker-labelled transcript, a summary and action items, sent where the work happens"
+  },
+  "cards": {
+    "label": "What Colloquia does: record, keep offline, transcribe, analyse, ask and send",
+    "columns": 3,
+    "items": [
+      { "icon": "mic", "tag": "Record", "title": "Record or import", "body": "Pause, resume and keep recording in the background, or import audio or video, cut to audio on the phone." },
+      { "icon": "wifi-off", "tag": "Offline", "title": "Nothing lost offline", "body": "A failed upload waits on the phone in an outbox and goes up when the library opens or you tap Upload now." },
+      { "icon": "languages", "tag": "Transcribe", "title": "Speakers and languages", "body": "Deepgram nova-3 labels each speaker and follows code-switching; Whisper takes over when Deepgram fails." },
+      { "icon": "sparkles", "tag": "Analyse", "title": "One AI pass", "body": "gpt-4o-mini writes the title, clean dialogue, English copy, summary, actions and topics in one call." },
+      { "icon": "search", "tag": "Ask", "title": "Chat and search", "body": "Chat with one transcript, ask across all of them, and search by keyword, or by meaning with lite mode off." },
+      { "icon": "send", "tag": "Send", "title": "Where work happens", "body": "Action items to Google Calendar and Tasks; notes to Slack, Teams, Notion, Trello, Jira or a webhook." }
+    ]
+  },
+  "pipeline": {
+    "label": "How a recording travels: record, upload, queue, transcribe, analyse, act",
+    "stages": [
+      { "icon": "mic", "title": "Record", "sub": "AAC m4a, or an import" },
+      { "icon": "cloud", "title": "Upload", "sub": "Presigned PUT to S3" },
+      { "icon": "layers", "title": "Queue", "sub": "A job for one worker" },
+      { "icon": "languages", "title": "Transcribe", "sub": "nova-3, Whisper fallback" },
+      { "icon": "sparkles", "title": "Analyse", "sub": "One gpt-4o-mini call" },
+      { "icon": "send", "title": "Act", "sub": "Calendar, Tasks, Slack" }
+    ]
+  },
+  "stats": {
+    "label": "At a glance: two speech engines, three transcript modes, four summary types, four export formats",
+    "tiles": [
+      { "icon": "mic", "kicker": "Speech engines", "value": "2", "label": "Deepgram first, then Whisper" },
+      { "icon": "languages", "kicker": "Transcript modes", "value": "3", "label": "Raw, refined, refined + English" },
+      { "icon": "file-text", "kicker": "Summary types", "value": "4", "label": "Brief, detailed, bullets, minutes" },
+      { "icon": "archive", "kicker": "Export formats", "value": "4", "label": "TXT, Markdown, Word and PDF" }
+    ]
+  },
+  "timeline": {
+    "label": "Colloquia so far: first build on 28 June, hardened on 29 June, multilingual on 2 July, provider keys rotatable at runtime since 12 July, live and voice screens still to build",
+    "items": [
+      { "date": "28 Jun", "title": "First build", "sub": "Recorder, queue, push" },
+      { "date": "29 Jun", "title": "Hardened", "sub": "One AI call, quota handling" },
+      { "date": "2 Jul", "title": "Multilingual", "sub": "nova-3 multi, speaker turns" },
+      { "date": "12 Jul", "title": "Keys at runtime", "sub": "Swap keys with no redeploy", "now": true },
+      { "date": "Next", "title": "Still to build", "sub": "Live, voice, meeting bots" }
+    ]
+  },
+  "divider": { "label": "Section divider" },
+  "footer": {
+    "title": "Every voice in the room, kept and put to work.",
+    "sub": "Colloquia · Kotlin + Compose · FastAPI · Deepgram · OpenAI",
+    "label": "Every voice in the room, kept and put to work. Colloquia: Kotlin and Compose, FastAPI, Deepgram, OpenAI."
+  },
+  "icons": ["activity", "badge-check", "book-open", "git-branch", "languages", "layers", "palette", "rocket", "send", "server", "shield-check", "sparkles", "workflow"]
+}
